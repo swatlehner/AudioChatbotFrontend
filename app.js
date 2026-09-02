@@ -108,23 +108,46 @@ async function playNextAudio() {
 
     try {
 
-        await audio.play();
+        const playPromise = audio.play();
+
+        if (playPromise !== undefined) {
+
+            await playPromise;
+
+            console.log(
+                "[Audio] Playback started successfully"
+            );
+
+        }
 
     }
     catch (error) {
 
         console.error(
-            "[TTS] Playback failed:",
+            "[Audio] Playback FAILED:",
             error
         );
+
+        console.error(
+            "[Audio] Error name:",
+            error.name
+        );
+
+        console.error(
+            "[Audio] Error message:",
+            error.message
+        );
+
 
         URL.revokeObjectURL(
             audioUrl
         );
 
+
         if (currentAudio === audio) {
             currentAudio = null;
         }
+
 
         isPlayingAudio = false;
 
@@ -262,6 +285,10 @@ function connect() {
                 event.data.type
             );
 
+            console.log("[Audio] WebSocket audio received");
+            console.log("[Audio] Blob size:", event.data.size);
+            console.log("[Audio] Blob type:", event.data.type);
+
             audioQueue.push(event.data);
 
             console.log(
@@ -391,41 +418,6 @@ async function startRecording() {
     audioQueue = [];
     isPlayingAudio = false;
 
-
-    // --------------------------------------------------
-    // INTERRUPT CURRENT BROWSER AUDIO
-    // --------------------------------------------------
-
-    if (currentAudio) {
-
-        console.log(
-            "[Interrupt] Stopping current browser audio"
-        );
-
-        currentAudio.pause();
-        currentAudio.currentTime = 0;
-
-        currentAudio = null;
-    }
-
-
-    // --------------------------------------------------
-    // CLEAR QUEUED BROWSER AUDIO
-    // --------------------------------------------------
-
-    if (audioQueue.length > 0) {
-
-        console.log(
-            "[Interrupt] Clearing browser audio queue:",
-            audioQueue.length,
-            "items"
-        );
-
-        audioQueue = [];
-    }
-
-
-    isPlayingAudio = false;
 
 
     try {
