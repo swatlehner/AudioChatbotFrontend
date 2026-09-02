@@ -18,14 +18,7 @@ let isPlayingAudio = false;
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 let currentSource = null;
 
-// iOS audio session
-if ("audioSession" in navigator) {
-    try {
-        navigator.audioSession.type = "playback";
-    } catch (error) {
-        console.log("[iOS] Could not set audio session:", error);
-    }
-}
+
 
 // --------------------------------------------------
 // STATUS
@@ -370,14 +363,7 @@ function connect() {
 // --------------------------------------------------
 async function startRecording() {
 
-    // Unlock Web Audio from the iPhone user gesture
-    try {
-        if (audioContext.state !== "running") {
-            await audioContext.resume();
-        }
-    } catch (error) {
-        console.error("[Audio] AudioContext resume failed:", error);
-    }
+
 
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         console.log("[WebSocket] Not connected");
