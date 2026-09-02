@@ -409,13 +409,29 @@ function connect() {
 // --------------------------------------------------
 
 async function startRecording() {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-        console.warn("[Web] WebSocket not connected");
+
+    if (
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
+    ) {
+
+        console.warn(
+            "[Web] WebSocket not connected"
+        );
+
         return;
     }
 
-    // INTERRUPT CURRENT SERVER RESPONSE IMMEDIATELY
-    socket.send("__INTERRUPT__");
+
+    // INTERRUPT CURRENT SERVER RESPONSE
+    socket.send(
+        "__INTERRUPT__"
+    );
+
+
+    console.log(
+        "[Web] Interrupt sent"
+    );
 
     // Stop any browser audio currently playing
     if (currentAudio) {
@@ -493,12 +509,25 @@ async function startRecording() {
             "stop",
             async () => {
 
+                console.log(
+                    "[Recorder] Stop event fired"
+                );
+
+
+                const recorder =
+                    mediaRecorder;
+
+
+                const stream =
+                    audioStream;
+
+
                 const audioBlob =
                     new Blob(
                         audioChunks,
                         {
                             type:
-                                mediaRecorder.mimeType
+                                recorder.mimeType
                         }
                     );
 
@@ -509,8 +538,69 @@ async function startRecording() {
                 );
 
 
+                // Do not send empty recordings
+                if (audioBlob.size === 0) {
+
+                    console.warn(
+                        "[Recorder] Empty audio - not sending"
+                    );
+
+
+                    if (stream) {
+
+                        stream
+                            .getTracks()
+                            .forEach(
+                                track => track.stop()
+                            );
+
+                    }
+
+
+                    mediaRecorder = null;
+                    audioStream = null;
+                    audioChunks = [];
+
+                    return;
+                }
+
+
                 const arrayBuffer =
                     await audioBlob.arrayBuffer();
+
+
+                console.log(
+                    "[Recorder] ArrayBuffer size:",
+                    arrayBuffer.byteLength
+                );
+
+
+                if (
+                    arrayBuffer.byteLength === 0
+                ) {
+
+                    console.warn(
+                        "[Recorder] Empty ArrayBuffer - not sending"
+                    );
+
+
+                    if (stream) {
+
+                        stream
+                            .getTracks()
+                            .forEach(
+                                track => track.stop()
+                            );
+
+                    }
+
+
+                    mediaRecorder = null;
+                    audioStream = null;
+                    audioChunks = [];
+
+                    return;
+                }
 
 
                 if (
@@ -531,14 +621,23 @@ async function startRecording() {
                 }
 
 
-                audioStream
-                    .getTracks()
-                    .forEach(
-                        track => track.stop()
-                    );
+                if (stream) {
+
+                    stream
+                        .getTracks()
+                        .forEach(
+                            track => track.stop()
+                        );
+
+                }
+
+
+                mediaRecorder = null;
+                audioStream = null;
+                audioChunks = [];
 
             }
-        );
+        );        
 
 
         mediaRecorder.start();
@@ -575,6 +674,11 @@ async function startRecording() {
 function stopRecording() {
 
     if (!mediaRecorder) {
+
+        console.log(
+            "[Recorder] Nothing to stop"
+        );
+
         return;
     }
 
@@ -584,6 +688,11 @@ function stopRecording() {
         "recording"
     ) {
 
+        console.log(
+            "[Recorder] Stopping recorder"
+        );
+
+
         mediaRecorder.stop();
 
 
@@ -591,9 +700,12 @@ function stopRecording() {
             "Processing..."
         );
 
+    }
+    else {
 
         console.log(
-            "[Recorder] Stopped"
+            "[Recorder] Recorder is not recording:",
+            mediaRecorder.state
         );
 
     }
