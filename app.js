@@ -14,6 +14,7 @@ let audioChunks = [];
 let currentAudio = null;
 let audioQueue = [];
 let isPlayingAudio = false;
+let audioUnlocked = false;
 
 
 // --------------------------------------------------
@@ -395,11 +396,35 @@ function connect() {
 }
 
 
+
+async function unlockAudio() {
+    if (audioUnlocked) return;
+
+    const audio = new Audio();
+    audio.src =
+        "data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA";
+    audio.volume = 0;
+
+    try {
+        await audio.play();
+        audio.pause();
+        audio.currentTime = 0;
+        audioUnlocked = true;
+        console.log("[iOS] Audio unlocked");
+    }
+    catch (error) {
+        console.log("[iOS] Audio unlock failed:", error);
+    }
+}
+
 // --------------------------------------------------
 // RECORDING
 // --------------------------------------------------
 
 async function startRecording() {
+
+    await unlockAudio();
+
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         console.warn("[Web] WebSocket not connected");
         return;
@@ -417,6 +442,7 @@ async function startRecording() {
 
     audioQueue = [];
     isPlayingAudio = false;
+    
 
 
 
