@@ -443,7 +443,6 @@ async function startRecording() {
     audioQueue = [];
     isPlayingAudio = false;
 
-    setIOSAudioSession("play-and-record");
 
 
     try {
