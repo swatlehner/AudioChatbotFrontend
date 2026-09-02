@@ -137,6 +137,9 @@ async function playNextAudio() {
 // WEBSOCKET
 // --------------------------------------------------
 
+
+
+
 function connect() {
 
     setStatus("Connecting...");
@@ -370,15 +373,23 @@ function connect() {
 // --------------------------------------------------
 
 async function startRecording() {
-
-    if (!socket) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        console.warn("[Web] WebSocket not connected");
         return;
     }
 
+    // INTERRUPT CURRENT SERVER RESPONSE IMMEDIATELY
+    socket.send("__INTERRUPT__");
 
-    if (socket.readyState !== WebSocket.OPEN) {
-        return;
+    // Stop any browser audio currently playing
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio = null;
     }
+
+    audioQueue = [];
+    isPlayingAudio = false;
 
 
     // --------------------------------------------------
@@ -599,6 +610,43 @@ talkButton.addEventListener(
     }
 );
 
+// SPACE BAR PUSH-TO-TALK
+let spacePressed = false;
+
+document.addEventListener("keydown", async (event) => {
+    if (event.code !== "Space") return;
+    if (event.repeat) return;
+
+    event.preventDefault();
+
+    if (spacePressed) return;
+    spacePressed = true;
+
+    console.log("[Keyboard] SPACE pressed");
+
+    await startRecording();
+});
+
+document.addEventListener("keyup", (event) => {
+    if (event.code !== "Space") return;
+
+    event.preventDefault();
+
+    if (!spacePressed) return;
+    spacePressed = false;
+
+    console.log("[Keyboard] SPACE released");
+
+    stopRecording();
+});
+
+// Safety: stop recording if the browser window loses focus
+window.addEventListener("blur", () => {
+    if (spacePressed) {
+        spacePressed = false;
+        stopRecording();
+    }
+});
 
 // --------------------------------------------------
 // CONNECT
