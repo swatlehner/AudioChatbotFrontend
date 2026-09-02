@@ -1,0 +1,60 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: white;
+}
+
+.app {
+    width: min(500px, 90vw);
+    text-align: center;
+}
+
+h1 {
+    margin-bottom: 30px;
+}
+
+#status {
+    margin-bottom: 30px;
+    color: #aaa;
+}
+
+#talkButton {
+    width: 220px;
+    height: 220px;
+
+    border-radius: 50%;
+    border: none;
+
+    font-size: 22px;
+    font-weight: bold;
+
+    background: #333;
+    color: white;
+
+    cursor: pointer;
+
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+#talkButton:active {
+    background: #555;
+    transform: scale(0.97);
+}
+
+#messages {
+    margin-top: 30px;
+    min-height: 40px;
+}
