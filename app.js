@@ -15,10 +15,6 @@ let currentAudio = null;
 let audioQueue = [];
 let isPlayingAudio = false;
 
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-let currentSource = null;
-
-
 
 // --------------------------------------------------
 // STATUS
@@ -49,74 +45,116 @@ async function playNextAudio() {
 
     const audioBlob = audioQueue.shift();
 
-    console.log(
-        "[TTS] Web Audio playing:",
-        audioBlob.size,
-        "bytes",
-        audioBlob.type
-    );
+    const audioUrl =
+        URL.createObjectURL(audioBlob);
+
+    const audio =
+        new Audio(audioUrl);
+
+    currentAudio = audio;
+
+
+    audio.onplay = () => {
+
+        console.log(
+            "[TTS] Playback started"
+        );
+
+    };
+
+
+    audio.onended = () => {
+
+        console.log(
+            "[TTS] Playback finished"
+        );
+
+        URL.revokeObjectURL(
+            audioUrl
+        );
+
+        if (currentAudio === audio) {
+            currentAudio = null;
+        }
+
+        isPlayingAudio = false;
+
+        playNextAudio();
+
+    };
+
+
+    audio.onerror = (error) => {
+
+        console.error(
+            "[TTS] Audio error:",
+            error
+        );
+
+        URL.revokeObjectURL(
+            audioUrl
+        );
+
+        if (currentAudio === audio) {
+            currentAudio = null;
+        }
+
+        isPlayingAudio = false;
+
+        playNextAudio();
+
+    };
+
 
     try {
 
-        // Make sure iOS audio context is running
-        if (audioContext.state !== "running") {
-            await audioContext.resume();
-        }
+        const playPromise = audio.play();
 
-        const arrayBuffer =
-            await audioBlob.arrayBuffer();
+        if (playPromise !== undefined) {
 
-        const audioBuffer =
-            await audioContext.decodeAudioData(arrayBuffer);
-
-        const source =
-            audioContext.createBufferSource();
-
-        source.buffer = audioBuffer;
-
-        source.connect(
-            audioContext.destination
-        );
-
-        currentSource = source;
-        currentAudio = source;
-
-        source.onended = () => {
+            await playPromise;
 
             console.log(
-                "[TTS] Web Audio playback finished"
+                "[Audio] Playback started successfully"
             );
 
-            if (currentSource === source) {
-                currentSource = null;
-            }
-
-            currentAudio = null;
-            isPlayingAudio = false;
-
-            playNextAudio();
-        };
-
-        source.start(0);
-
-        console.log(
-            "[TTS] Web Audio playback started"
-        );
+        }
 
     }
     catch (error) {
 
         console.error(
-            "[TTS] Web Audio playback failed:",
+            "[Audio] Playback FAILED:",
             error
         );
 
-        currentSource = null;
-        currentAudio = null;
+        console.error(
+            "[Audio] Error name:",
+            error.name
+        );
+
+        console.error(
+            "[Audio] Error message:",
+            error.message
+        );
+
+
+        URL.revokeObjectURL(
+            audioUrl
+        );
+
+
+        if (currentAudio === audio) {
+            currentAudio = null;
+        }
+
+
         isPlayingAudio = false;
 
         playNextAudio();
+
     }
+
 }
 // --------------------------------------------------
 // WEBSOCKET
@@ -357,35 +395,28 @@ function connect() {
 }
 
 
-
 // --------------------------------------------------
 // RECORDING
 // --------------------------------------------------
+
 async function startRecording() {
-
-
-
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-        console.log("[WebSocket] Not connected");
+        console.warn("[Web] WebSocket not connected");
         return;
     }
 
+    // INTERRUPT CURRENT SERVER RESPONSE IMMEDIATELY
     socket.send("__INTERRUPT__");
 
+    // Stop any browser audio currently playing
     if (currentAudio) {
-        try {
-            currentSource.stop();
-        } catch (error) {
-        }
-
-        currentSource = null;
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
         currentAudio = null;
     }
 
     audioQueue = [];
     isPlayingAudio = false;
-
-    
 
 
 
