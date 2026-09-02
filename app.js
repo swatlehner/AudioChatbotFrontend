@@ -14,7 +14,8 @@ let audioChunks = [];
 let currentAudio = null;
 let audioQueue = [];
 let isPlayingAudio = false;
-let audioUnlocked = false;
+const ttsAudio = new Audio();
+ttsAudio.preload = "auto";
 
 
 // --------------------------------------------------
@@ -32,10 +33,7 @@ function setStatus(text) {
 // --------------------------------------------------
 
 async function playNextAudio() {
-
-    if (isPlayingAudio) {
-        return;
-    }
+    if (isPlayingAudio) return;
 
     if (audioQueue.length === 0) {
         currentAudio = null;
@@ -45,117 +43,61 @@ async function playNextAudio() {
     isPlayingAudio = true;
 
     const audioBlob = audioQueue.shift();
+    const audioUrl = URL.createObjectURL(audioBlob);
 
-    const audioUrl =
-        URL.createObjectURL(audioBlob);
+    currentAudio = ttsAudio;
 
-    const audio =
-        new Audio(audioUrl);
+    console.log(
+        "[TTS] Playing audio:",
+        audioBlob.size,
+        "bytes",
+        audioBlob.type
+    );
 
-    currentAudio = audio;
+    ttsAudio.onended = () => {
+        console.log("[TTS] Playback finished");
 
+        URL.revokeObjectURL(audioUrl);
 
-    audio.onplay = () => {
+        ttsAudio.removeAttribute("src");
+        ttsAudio.load();
 
-        console.log(
-            "[TTS] Playback started"
-        );
-
-    };
-
-
-    audio.onended = () => {
-
-        console.log(
-            "[TTS] Playback finished"
-        );
-
-        URL.revokeObjectURL(
-            audioUrl
-        );
-
-        if (currentAudio === audio) {
-            currentAudio = null;
-        }
-
+        currentAudio = null;
         isPlayingAudio = false;
 
         playNextAudio();
-
     };
 
+    ttsAudio.onerror = (error) => {
+        console.error("[TTS] Audio error:", error);
 
-    audio.onerror = (error) => {
+        URL.revokeObjectURL(audioUrl);
 
-        console.error(
-            "[TTS] Audio error:",
-            error
-        );
+        ttsAudio.removeAttribute("src");
+        ttsAudio.load();
 
-        URL.revokeObjectURL(
-            audioUrl
-        );
-
-        if (currentAudio === audio) {
-            currentAudio = null;
-        }
-
+        currentAudio = null;
         isPlayingAudio = false;
 
         playNextAudio();
-
     };
 
+    ttsAudio.src = audioUrl;
 
     try {
-
-        const playPromise = audio.play();
-
-        if (playPromise !== undefined) {
-
-            await playPromise;
-
-            console.log(
-                "[Audio] Playback started successfully"
-            );
-
-        }
-
+        await ttsAudio.play();
+        console.log("[TTS] Playback started");
     }
     catch (error) {
+        console.error("[TTS] Playback failed:", error);
 
-        console.error(
-            "[Audio] Playback FAILED:",
-            error
-        );
+        URL.revokeObjectURL(audioUrl);
 
-        console.error(
-            "[Audio] Error name:",
-            error.name
-        );
-
-        console.error(
-            "[Audio] Error message:",
-            error.message
-        );
-
-
-        URL.revokeObjectURL(
-            audioUrl
-        );
-
-
-        if (currentAudio === audio) {
-            currentAudio = null;
-        }
-
-
+        currentAudio = null;
         isPlayingAudio = false;
 
         playNextAudio();
-
     }
-
 }
 // --------------------------------------------------
 // WEBSOCKET
@@ -397,33 +339,12 @@ function connect() {
 
 
 
-async function unlockAudio() {
-    if (audioUnlocked) return;
-
-    const audio = new Audio();
-    audio.src =
-        "data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA";
-    audio.volume = 0;
-
-    try {
-        await audio.play();
-        audio.pause();
-        audio.currentTime = 0;
-        audioUnlocked = true;
-        console.log("[iOS] Audio unlocked");
-    }
-    catch (error) {
-        console.log("[iOS] Audio unlock failed:", error);
-    }
-}
-
 // --------------------------------------------------
 // RECORDING
 // --------------------------------------------------
 
 async function startRecording() {
 
-    await unlockAudio();
 
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         console.warn("[Web] WebSocket not connected");
