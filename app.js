@@ -18,6 +18,14 @@ let isPlayingAudio = false;
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 let currentSource = null;
 
+// iOS audio session
+if ("audioSession" in navigator) {
+    try {
+        navigator.audioSession.type = "playback";
+    } catch (error) {
+        console.log("[iOS] Could not set audio session:", error);
+    }
+}
 
 // --------------------------------------------------
 // STATUS
@@ -360,36 +368,37 @@ function connect() {
 // --------------------------------------------------
 // RECORDING
 // --------------------------------------------------
-
 async function startRecording() {
 
+    // Unlock Web Audio from the iPhone user gesture
+    try {
+        if (audioContext.state !== "running") {
+            await audioContext.resume();
+        }
+    } catch (error) {
+        console.error("[Audio] AudioContext resume failed:", error);
+    }
 
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-        console.warn("[Web] WebSocket not connected");
+        console.log("[WebSocket] Not connected");
         return;
     }
 
-    // INTERRUPT CURRENT SERVER RESPONSE IMMEDIATELY
     socket.send("__INTERRUPT__");
 
-    // Stop any browser audio currently playing
-    if (currentSource) {
-
+    if (currentAudio) {
         try {
             currentSource.stop();
-        }
-        catch (error) {
-            // Source may already have stopped
+        } catch (error) {
         }
 
-        currentSource.disconnect();
         currentSource = null;
+        currentAudio = null;
     }
-
-    currentAudio = null;
 
     audioQueue = [];
     isPlayingAudio = false;
+
     
 
 
