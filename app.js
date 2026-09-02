@@ -15,6 +15,28 @@ let currentAudio = null;
 let audioQueue = [];
 let isPlayingAudio = false;
 
+function setIOSAudioSession(type) {
+
+    if (!("audioSession" in navigator)) {
+        return;
+    }
+
+    try {
+        navigator.audioSession.type = type;
+
+        console.log(
+            "[iOS AudioSession] Set to:",
+            navigator.audioSession.type
+        );
+    }
+    catch (error) {
+        console.warn(
+            "[iOS AudioSession] Could not set:",
+            type,
+            error
+        );
+    }
+}
 
 // --------------------------------------------------
 // STATUS
@@ -169,6 +191,7 @@ function connect() {
 
     socket = new WebSocket(RAILWAY_URL);
 
+    socket.binaryType = "arraybuffer";
 
     socket.addEventListener("open", () => {
 
@@ -309,54 +332,40 @@ function connect() {
         if (event.data instanceof ArrayBuffer) {
 
             console.log(
-                "[WebSocket] ArrayBuffer received:",
+                "[WebSocket] ArrayBuffer audio received:",
                 event.data.byteLength,
                 "bytes"
             );
 
 
-            const audioBlob = new Blob(
-                [event.data],
-                {
-                    type: "audio/mpeg"
-                }
+            const audioBlob =
+                new Blob(
+                    [event.data],
+                    {
+                        type: "audio/wav"
+                    }
+                );
+
+
+            console.log(
+                "[TTS] WAV audio queued:",
+                audioBlob.size,
+                "bytes"
             );
 
 
-            const audioUrl =
-                URL.createObjectURL(audioBlob);
+            audioQueue.push(
+                audioBlob
+            );
 
 
-            const audio =
-                new Audio(audioUrl);
-
-            currentAudio = audio;
-
-
-            audio.onended = () => {
-
-                URL.revokeObjectURL(audioUrl);
-
-            };
+            console.log(
+                "[TTS] Audio queued. Queue length:",
+                audioQueue.length
+            );
 
 
-            try {
-
-                await audio.play();
-
-                console.log(
-                    "[TTS] ArrayBuffer playback started"
-                );
-
-            }
-            catch (error) {
-
-                console.error(
-                    "[TTS] ArrayBuffer playback failed:",
-                    error
-                );
-
-            }
+            playNextAudio();
 
             return;
         }
@@ -418,6 +427,7 @@ async function startRecording() {
     audioQueue = [];
     isPlayingAudio = false;
 
+    setIOSAudioSession("play-and-record");
 
 
     try {
@@ -431,9 +441,35 @@ async function startRecording() {
         audioChunks = [];
 
 
+        let recorderOptions = {};
+
+        if (
+            typeof MediaRecorder.isTypeSupported === "function" &&
+            MediaRecorder.isTypeSupported("audio/mp4")
+        ) {
+
+            recorderOptions.mimeType = "audio/mp4";
+
+        }
+        else if (
+            typeof MediaRecorder.isTypeSupported === "function" &&
+            MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ) {
+
+            recorderOptions.mimeType =
+                "audio/webm;codecs=opus";
+
+        }
+
+        console.log(
+            "[Recorder] Using MIME type:",
+            recorderOptions.mimeType || "browser default"
+        );
+
         mediaRecorder =
             new MediaRecorder(
-                audioStream
+                audioStream,
+                recorderOptions
             );
 
 
