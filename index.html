@@ -1,44 +1,175 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Voice Assistant</title>
+    <title>Bavarian Voice Assistant</title>
 
-    <link
-        rel="stylesheet"
-        href="style.css"
-    >
+    <script
+        src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js">
+    </script>
 
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 80px auto;
+            padding: 20px;
+            text-align: center;
+        }
+
+        button {
+            font-size: 18px;
+            padding: 12px 24px;
+            margin: 10px;
+            cursor: pointer;
+        }
+
+        #status {
+            margin: 20px;
+        }
+    </style>
 </head>
 
 <body>
 
-    <main class="app">
+    <h1>Bavarian Voice Assistant</h1>
 
-        <h1>Voice Assistant</h1>
+    <p id="status">Disconnected</p>
 
-        <div id="status">
-            Connecting...
-        </div>
+    <button id="connectButton">
+        Start conversation
+    </button>
 
-        <button id="talkButton">
-            Hold to Talk
-        </button>
+    <button id="disconnectButton" disabled>
+        End conversation
+    </button>
 
-        <div id="messages"></div>
+    <div id="audio"></div>
 
-    </main>
 
-    <script src="app.js"></script>
+    <script>
+        // CHANGE THIS after Railway gives you your domain.
+        const BACKEND_URL =
+            "https://lehnerchatbotv03audio-production.up.railway.app";
+
+
+        let room = null;
+
+        const status =
+            document.getElementById("status");
+
+        const connectButton =
+            document.getElementById("connectButton");
+
+        const disconnectButton =
+            document.getElementById("disconnectButton");
+
+        const audioContainer =
+            document.getElementById("audio");
+
+
+        connectButton.onclick = async () => {
+            try {
+                status.textContent = "Getting token...";
+
+                const response = await fetch(
+                    `${BACKEND_URL}/token`
+                );
+
+                if (!response.ok) {
+                    throw new Error(
+                        `Token request failed: ${response.status}`
+                    );
+                }
+
+                const data = await response.json();
+
+                room = new LivekitClient.Room();
+
+
+                room.on(
+                    LivekitClient.RoomEvent.TrackSubscribed,
+                    (track) => {
+                        if (
+                            track.kind ===
+                            LivekitClient.Track.Kind.Audio
+                        ) {
+                            const element = track.attach();
+                            audioContainer.appendChild(element);
+                        }
+                    }
+                );
+
+
+                room.on(
+                    LivekitClient.RoomEvent.TrackUnsubscribed,
+                    (track) => {
+                        track.detach().forEach(
+                            element => element.remove()
+                        );
+                    }
+                );
+
+
+                room.on(
+                    LivekitClient.RoomEvent.Disconnected,
+                    () => {
+                        status.textContent = "Disconnected";
+                        connectButton.disabled = false;
+                        disconnectButton.disabled = true;
+                    }
+                );
+
+
+                status.textContent = "Connecting...";
+
+                await room.connect(
+                    data.server_url,
+                    data.participant_token
+                );
+
+                // Allow browser audio playback.
+                await room.startAudio();
+
+                // Ask for microphone permission and publish it.
+                await room.localParticipant
+                    .setMicrophoneEnabled(true);
+
+
+                status.textContent =
+                    "Connected — speak now";
+
+                connectButton.disabled = true;
+                disconnectButton.disabled = false;
+
+            } catch (error) {
+                console.error(error);
+
+                status.textContent =
+                    `Error: ${error.message}`;
+            }
+        };
+
+
+        disconnectButton.onclick = async () => {
+            if (room) {
+                await room.disconnect();
+                room = null;
+            }
+
+            audioContainer.innerHTML = "";
+
+            status.textContent = "Disconnected";
+
+            connectButton.disabled = false;
+            disconnectButton.disabled = true;
+        };
+    </script>
 
 </body>
-
 </html>
