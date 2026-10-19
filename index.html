@@ -1,175 +1,314 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
 
-    <title>Bavarian Voice Assistant</title>
+  <title>Bavarian Voice Assistant</title>
 
-    <script
-        src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js">
-    </script>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.23.0/dist/livekit-client.umd.min.js"></script>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 80px auto;
-            padding: 20px;
-            text-align: center;
-        }
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 500px;
+      margin: 60px auto;
+      padding: 20px;
+      text-align: center;
+    }
 
-        button {
-            font-size: 18px;
-            padding: 12px 24px;
-            margin: 10px;
-            cursor: pointer;
-        }
+    button {
+      padding: 12px 24px;
+      margin: 8px;
+      font-size: 16px;
+      cursor: pointer;
+    }
 
-        #status {
-            margin: 20px;
-        }
-    </style>
+    #talkButton {
+      display: block;
+      width: 200px;
+      height: 200px;
+      margin: 30px auto;
+      border: none;
+      border-radius: 50%;
+      background: #2768cc;
+      color: white;
+      font-size: 22px;
+      font-weight: bold;
+      touch-action: none;
+      user-select: none;
+    }
+
+    #talkButton.active {
+      background: #c0392b;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    #status {
+      margin: 20px;
+    }
+  </style>
 </head>
 
 <body>
+  <h1>Bavarian Voice Assistant</h1>
 
-    <h1>Bavarian Voice Assistant</h1>
+  <p id="status">Disconnected</p>
 
-    <p id="status">Disconnected</p>
+  <button id="connectButton">Connect</button>
+  <button id="disconnectButton" disabled>Disconnect</button>
 
-    <button id="connectButton">
-        Start conversation
-    </button>
+  <button id="talkButton" disabled>
+    Hold to talk
+  </button>
 
-    <button id="disconnectButton" disabled>
-        End conversation
-    </button>
+  <div id="audio"></div>
 
-    <div id="audio"></div>
+  <script>
+    // Replace with your existing Railway domain.
+    const BACKEND_URL =
+      "https://YOUR-RAILWAY-DOMAIN.up.railway.app";
 
+    const status = document.getElementById("status");
+    const connectButton =
+      document.getElementById("connectButton");
+    const disconnectButton =
+      document.getElementById("disconnectButton");
+    const talkButton =
+      document.getElementById("talkButton");
+    const audioContainer =
+      document.getElementById("audio");
 
-    <script>
-        // CHANGE THIS after Railway gives you your domain.
-        const BACKEND_URL =
-            "https://lehnerchatbotv03audio-production.up.railway.app";
+    let room = null;
+    let pointerId = null;
+    let turnQueue = Promise.resolve();
 
+    function getAgentIdentity() {
+      if (!room) return null;
 
-        let room = null;
+      for (const participant of room.remoteParticipants.values()) {
+        if (participant.isAgent) {
+          return participant.identity;
+        }
+      }
 
-        const status =
-            document.getElementById("status");
+      return null;
+    }
 
-        const connectButton =
-            document.getElementById("connectButton");
+    function updateStatus() {
+      if (!room) return;
 
-        const disconnectButton =
-            document.getElementById("disconnectButton");
+      const agentReady = !!getAgentIdentity();
+      talkButton.disabled = !agentReady;
 
-        const audioContainer =
-            document.getElementById("audio");
+      status.textContent = agentReady
+        ? "Connected — hold to talk"
+        : "Waiting for agent...";
+    }
 
+    async function callAgent(method) {
+      const identity = getAgentIdentity();
 
-        connectButton.onclick = async () => {
-            try {
-                status.textContent = "Getting token...";
+      if (!identity) {
+        throw new Error("Agent not connected");
+      }
 
-                const response = await fetch(
-                    `${BACKEND_URL}/token`
-                );
+      return room.localParticipant.performRpc({
+        destinationIdentity: identity,
+        method: method,
+        payload: "",
+      });
+    }
 
-                if (!response.ok) {
-                    throw new Error(
-                        `Token request failed: ${response.status}`
-                    );
-                }
+    // Run button actions sequentially, even for quick taps.
+    function queueAction(action) {
+      turnQueue = turnQueue.then(action).catch(async (error) => {
+        console.error(error);
+        status.textContent = "Error: " + error.message;
 
-                const data = await response.json();
+        if (room) {
+          await room.localParticipant
+            .setMicrophoneEnabled(false)
+            .catch(console.error);
+          await callAgent("cancel_turn").catch(console.error);
+        }
+      });
+    }
 
-                room = new LivekitClient.Room();
+    // Connect to LiveKit
+    connectButton.onclick = async () => {
+      connectButton.disabled = true;
+      status.textContent = "Connecting...";
 
+      const newRoom = new LivekitClient.Room();
 
-                room.on(
-                    LivekitClient.RoomEvent.TrackSubscribed,
-                    (track) => {
-                        if (
-                            track.kind ===
-                            LivekitClient.Track.Kind.Audio
-                        ) {
-                            const element = track.attach();
-                            audioContainer.appendChild(element);
-                        }
-                    }
-                );
+      try {
+        const response = await fetch(
+          BACKEND_URL + "/token"
+        );
 
+        if (!response.ok) {
+          throw new Error("Could not get room token");
+        }
 
-                room.on(
-                    LivekitClient.RoomEvent.TrackUnsubscribed,
-                    (track) => {
-                        track.detach().forEach(
-                            element => element.remove()
-                        );
-                    }
-                );
+        const data = await response.json();
 
-
-                room.on(
-                    LivekitClient.RoomEvent.Disconnected,
-                    () => {
-                        status.textContent = "Disconnected";
-                        connectButton.disabled = false;
-                        disconnectButton.disabled = true;
-                    }
-                );
-
-
-                status.textContent = "Connecting...";
-
-                await room.connect(
-                    data.server_url,
-                    data.participant_token
-                );
-
-                // Allow browser audio playback.
-                await room.startAudio();
-
-                // Ask for microphone permission and publish it.
-                await room.localParticipant
-                    .setMicrophoneEnabled(true);
-
-
-                status.textContent =
-                    "Connected — speak now";
-
-                connectButton.disabled = true;
-                disconnectButton.disabled = false;
-
-            } catch (error) {
-                console.error(error);
-
-                status.textContent =
-                    `Error: ${error.message}`;
+        newRoom.on(
+          LivekitClient.RoomEvent.TrackSubscribed,
+          (track) => {
+            if (track.kind === LivekitClient.Track.Kind.Audio) {
+              audioContainer.appendChild(track.attach());
             }
-        };
+          }
+        );
 
+        newRoom.on(
+          LivekitClient.RoomEvent.TrackUnsubscribed,
+          (track) => {
+            track.detach().forEach(el => el.remove());
+          }
+        );
 
-        disconnectButton.onclick = async () => {
-            if (room) {
-                await room.disconnect();
-                room = null;
-            }
+        newRoom.on(
+          LivekitClient.RoomEvent.ParticipantConnected,
+          updateStatus
+        );
 
-            audioContainer.innerHTML = "";
+        newRoom.on(
+          LivekitClient.RoomEvent.ParticipantDisconnected,
+          updateStatus
+        );
 
-            status.textContent = "Disconnected";
-
+        newRoom.on(
+          LivekitClient.RoomEvent.Disconnected,
+          () => {
+            room = null;
+            pointerId = null;
+            talkButton.classList.remove("active");
+            talkButton.disabled = true;
             connectButton.disabled = false;
             disconnectButton.disabled = true;
-        };
-    </script>
+            status.textContent = "Disconnected";
+            audioContainer.innerHTML = "";
+          }
+        );
 
+        await newRoom.connect(
+          data.server_url,
+          data.participant_token
+        );
+
+        room = newRoom;
+
+        await room.startAudio();
+
+        // Request mic permission once, then mute it.
+        await room.localParticipant
+          .setMicrophoneEnabled(true);
+        await room.localParticipant
+          .setMicrophoneEnabled(false);
+
+        disconnectButton.disabled = false;
+        updateStatus();
+
+      } catch (error) {
+        console.error(error);
+        status.textContent = "Error: " + error.message;
+
+        await newRoom.disconnect();
+        room = null;
+        connectButton.disabled = false;
+      }
+    };
+
+    // Start speaking when button is pressed
+    talkButton.addEventListener("pointerdown", (event) => {
+      if (!room || talkButton.disabled || pointerId !== null) {
+        return;
+      }
+
+      event.preventDefault();
+      pointerId = event.pointerId;
+      talkButton.setPointerCapture(pointerId);
+      talkButton.classList.add("active");
+
+      queueAction(async () => {
+        if (!room) return;
+
+        await callAgent("start_turn");
+        await room.localParticipant
+          .setMicrophoneEnabled(true);
+
+        status.textContent = "Listening...";
+      });
+    });
+
+    // Finish speaking when button is released
+    function releaseTalk(event, canceled = false) {
+      if (pointerId !== event.pointerId) return;
+
+      pointerId = null;
+      talkButton.classList.remove("active");
+
+      queueAction(async () => {
+        if (!room) return;
+
+        await room.localParticipant
+          .setMicrophoneEnabled(false);
+
+        await callAgent(
+          canceled ? "cancel_turn" : "end_turn"
+        );
+
+        status.textContent = canceled
+          ? "Recording canceled"
+          : "Processing...";
+      });
+    }
+
+    talkButton.addEventListener(
+      "pointerup",
+      event => releaseTalk(event)
+    );
+
+    talkButton.addEventListener(
+      "pointercancel",
+      event => releaseTalk(event, true)
+    );
+
+    // Avoid leaving the microphone active if focus is lost.
+    window.addEventListener("blur", () => {
+      if (pointerId !== null) {
+        releaseTalk({ pointerId }, true);
+      }
+    });
+
+    // Disconnect
+    disconnectButton.onclick = async () => {
+      disconnectButton.disabled = true;
+      talkButton.disabled = true;
+
+      if (pointerId !== null) {
+        releaseTalk({ pointerId }, true);
+      }
+
+      await turnQueue;
+
+      if (room) {
+        await room.disconnect();
+        room = null;
+      }
+
+      audioContainer.innerHTML = "";
+      status.textContent = "Disconnected";
+      connectButton.disabled = false;
+    };
+  </script>
 </body>
 </html>
