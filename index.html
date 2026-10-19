@@ -53,24 +53,45 @@
     #status {
       margin: 20px;
     }
+
+    .keyboard-hint {
+        color: #777;
+        font-size: 14px;
+        margin-top: -15px;
+    }
+
+    kbd {
+        display: inline-block;
+        padding: 4px 9px;
+        background: #f3f3f3;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        font-family: inherit;
+        font-weight: bold;
+    }
+
   </style>
 </head>
 
 <body>
-  <h1>Bavarian Voice Assistant</h1>
+    <h1>Bavarian Voice Assistant</h1>
 
-  <p id="status">Disconnected</p>
+    <p id="status">Disconnected</p>
 
-  <button id="connectButton">Connect</button>
-  <button id="disconnectButton" disabled>Disconnect</button>
+    <button id="connectButton">Connect</button>
+    <button id="disconnectButton" disabled>Disconnect</button>
 
-  <button id="talkButton" disabled>
-    Hold to talk
-  </button>
+    <button id="talkButton" disabled>
+        Hold to talk
+    </button>
 
-  <div id="audio"></div>
+    <p class="keyboard-hint">
+        Hold <kbd>Space</kbd> or the button to talk
+    </p>
 
-  <script>
+    <div id="audio"></div>
+
+    <script>
     // Replace with your existing Railway domain.
     const BACKEND_URL =
       "https://lehnerchatbotv03audio-production.up.railway.app";
@@ -387,6 +408,6 @@
       status.textContent = "Disconnected";
       connectButton.disabled = false;
     };
-  </script>
+    </script>
 </body>
 </html>
