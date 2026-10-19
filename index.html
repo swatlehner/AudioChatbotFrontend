@@ -87,6 +87,7 @@
 
     let room = null;
     let pointerId = null;
+    let spaceHeld = false;
     let turnQueue = Promise.resolve();
 
     function getAgentIdentity() {
@@ -229,9 +230,14 @@
 
     // Start speaking when button is pressed
     talkButton.addEventListener("pointerdown", (event) => {
-      if (!room || talkButton.disabled || pointerId !== null) {
-        return;
-      }
+        if (
+            !room ||
+            talkButton.disabled ||
+            pointerId !== null ||
+            spaceHeld
+        ) {
+            return;
+        }
 
       event.preventDefault();
       pointerId = event.pointerId;
@@ -282,6 +288,77 @@
       event => releaseTalk(event, true)
     );
 
+    // SPACEBAR: Start speaking
+    document.addEventListener("keydown", (event) => {
+        if (event.code !== "Space" || event.repeat) return;
+
+        // Don't interfere with text input fields
+        if (
+            event.target.matches("input, textarea, select") ||
+            event.target.isContentEditable
+        ) return;
+
+        if (
+            !room ||
+            talkButton.disabled ||
+            spaceHeld ||
+            pointerId !== null
+        ) return;
+
+        event.preventDefault(); // Prevent page scrolling
+
+        spaceHeld = true;
+        talkButton.classList.add("active");
+
+        queueAction(async () => {
+            if (!room) return;
+
+            await callAgent("start_turn");
+
+            await room.localParticipant
+                .setMicrophoneEnabled(true);
+
+            status.textContent = "Listening...";
+        });
+    });
+
+
+    // SPACEBAR: Stop speaking
+    document.addEventListener("keyup", (event) => {
+        if (event.code !== "Space" || !spaceHeld) return;
+
+        event.preventDefault();
+        releaseSpace();
+    });
+
+    function releaseSpace(canceled = false) {
+        if (!spaceHeld) return;
+
+        spaceHeld = false;
+        talkButton.classList.remove("active");
+
+        queueAction(async () => {
+            if (!room) return;
+
+            await room.localParticipant
+                .setMicrophoneEnabled(false);
+
+            await callAgent(
+                canceled ? "cancel_turn" : "end_turn"
+            );
+
+            status.textContent = canceled
+                ? "Recording canceled"
+                : "Processing...";
+        });
+    }
+
+    // Cancel if the browser loses focus while Space is held
+    window.addEventListener("blur", () => {
+        releaseSpace(true);
+    });
+
+
     // Avoid leaving the microphone active if focus is lost.
     window.addEventListener("blur", () => {
       if (pointerId !== null) {
@@ -298,7 +375,8 @@
         releaseTalk({ pointerId }, true);
       }
 
-      await turnQueue;
+        releaseSpace(true);
+        await turnQueue;
 
       if (room) {
         await room.disconnect();
