@@ -5,7 +5,6 @@
   <meta charset="UTF-8">
   <meta name="viewport"
         content="width=device-width, initial-scale=1">
-
   <title>Bavarian Voice Assistant</title>
 
   <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.23.0/dist/livekit-client.umd.min.js"></script>
@@ -13,29 +12,112 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      max-width: 500px;
-      margin: 60px auto;
-      padding: 20px;
-      text-align: center;
+      max-width: 650px;
+      margin: 35px auto;
+      padding: 16px;
+      color: #222;
     }
 
+    h1 { text-align: center; }
+
+    button, textarea { font: inherit; }
+
     button {
-      padding: 12px 24px;
-      margin: 8px;
-      font-size: 16px;
       cursor: pointer;
+      padding: 10px 18px;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+
+    #status {
+      text-align: center;
+      color: #666;
+      min-height: 24px;
+    }
+
+    #messages {
+      height: 340px;
+      overflow-y: auto;
+      padding: 16px;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      background: #fafafa;
+    }
+
+    .message {
+      max-width: 82%;
+      width: fit-content;
+      padding: 11px 14px;
+      margin: 10px 0;
+      border-radius: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .assistant {
+      background: #e9edf3;
+      margin-right: auto;
+    }
+
+    .user {
+      background: #d6e7ff;
+      margin-left: auto;
+    }
+
+    .message small {
+      display: block;
+      color: #666;
+      margin-bottom: 5px;
+    }
+
+    .message-text {
+      white-space: pre-wrap;
+    }
+
+    #composer {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    #textInput {
+      flex: 1;
+      min-width: 0;
+      resize: vertical;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+
+    #sendButton {
+      background: #2768cc;
+      color: white;
+      border: none;
+      border-radius: 8px;
     }
 
     #talkButton {
       display: block;
-      width: 200px;
-      height: 200px;
-      margin: 30px auto;
+      width: 150px;
+      height: 150px;
+      margin: 26px auto 10px;
       border: none;
       border-radius: 50%;
       background: #2768cc;
       color: white;
-      font-size: 22px;
+      font-size: 18px;
       font-weight: bold;
       touch-action: none;
       user-select: none;
@@ -45,71 +127,95 @@
       background: #c0392b;
     }
 
-    button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    #status {
-      margin: 20px;
-    }
-
-    .keyboard-hint {
-        color: #777;
-        font-size: 14px;
-        margin-top: -15px;
+    .hint {
+      text-align: center;
+      color: #777;
+      font-size: 14px;
     }
 
     kbd {
-        display: inline-block;
-        padding: 4px 9px;
-        background: #f3f3f3;
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        font-family: inherit;
-        font-weight: bold;
+      border: 1px solid #ccc;
+      background: #f3f3f3;
+      padding: 3px 7px;
+      border-radius: 5px;
     }
-
   </style>
 </head>
 
 <body>
-    <h1>Bavarian Voice Assistant</h1>
+  <h1>Bavarian Voice Assistant</h1>
 
-    <p id="status">Disconnected</p>
+  <div class="controls">
+    <div>
+      <button id="connectButton">Connect</button>
+      <button id="disconnectButton" disabled>
+        Disconnect
+      </button>
+    </div>
 
-    <button id="connectButton">Connect</button>
-    <button id="disconnectButton" disabled>Disconnect</button>
+    <label>
+      <input id="voiceToggle"
+             type="checkbox" disabled>
+      Spoken replies
+    </label>
+  </div>
 
-    <button id="talkButton" disabled>
-        Hold to talk
+  <p id="status">Disconnected</p>
+
+  <div id="messages"
+       role="log"
+       aria-label="Conversation"
+       aria-live="polite"></div>
+
+  <form id="composer">
+    <textarea
+      id="textInput"
+      rows="2"
+      placeholder="Type a message..."
+      disabled
+    ></textarea>
+
+    <button id="sendButton" type="submit" disabled>
+      Send
     </button>
+  </form>
 
-    <p class="keyboard-hint">
-        Hold <kbd>Space</kbd> or the button to talk
-    </p>
+  <button id="talkButton" disabled>
+    Hold to talk
+  </button>
 
-    <div id="audio"></div>
+  <p class="hint">
+    Hold <kbd>Space</kbd> or the button to speak
+  </p>
 
-    <script>
-    // Replace with your existing Railway domain.
+  <div id="audio"></div>
+
+  <script>
+    // Keep your existing real Railway domain here.
     const BACKEND_URL =
       "https://lehnerchatbotv03audio-production.up.railway.app";
 
-    const status = document.getElementById("status");
-    const connectButton =
-      document.getElementById("connectButton");
-    const disconnectButton =
-      document.getElementById("disconnectButton");
-    const talkButton =
-      document.getElementById("talkButton");
-    const audioContainer =
-      document.getElementById("audio");
+    const $ = (id) => document.getElementById(id);
+
+    const status = $("status");
+    const connectButton = $("connectButton");
+    const disconnectButton = $("disconnectButton");
+    const talkButton = $("talkButton");
+    const voiceToggle = $("voiceToggle");
+    const composer = $("composer");
+    const textInput = $("textInput");
+    const sendButton = $("sendButton");
+    const messages = $("messages");
+    const audioContainer = $("audio");
 
     let room = null;
     let pointerId = null;
     let spaceHeld = false;
+    let recording = false;
+    let micReady = false;
     let turnQueue = Promise.resolve();
+
+    const transcriptSegments = new Map();
 
     function getAgentIdentity() {
       if (!room) return null;
@@ -123,54 +229,184 @@
       return null;
     }
 
-    function updateStatus() {
-      if (!room) return;
-
+    function updateAvailability() {
+      const connected = !!room;
       const agentReady = !!getAgentIdentity();
-      talkButton.disabled = !agentReady;
 
-      status.textContent = agentReady
-        ? "Connected — hold to talk"
-        : "Waiting for agent...";
+      textInput.disabled = !agentReady;
+      sendButton.disabled = !agentReady;
+      talkButton.disabled = !agentReady;
+      voiceToggle.disabled = !agentReady;
+
+      if (connected && !recording) {
+        status.textContent = agentReady
+          ? "Connected — ready"
+          : "Waiting for agent...";
+      }
     }
 
-    async function callAgent(method) {
+    function addMessage(role, text) {
+      const bubble = document.createElement("div");
+      bubble.className = "message " + role;
+
+      const label = document.createElement("small");
+      label.textContent =
+        role === "user" ? "You" : "Assistant";
+
+      const content = document.createElement("div");
+      content.className = "message-text";
+      content.textContent = text;
+
+      bubble.append(label, content);
+      messages.appendChild(bubble);
+      messages.scrollTop = messages.scrollHeight;
+
+      return content;
+    }
+
+    async function callAgent(method, payload = "") {
       const identity = getAgentIdentity();
 
-      if (!identity) {
+      if (!identity || !room) {
         throw new Error("Agent not connected");
       }
 
       return room.localParticipant.performRpc({
         destinationIdentity: identity,
-        method: method,
-        payload: "",
+        method,
+        payload,
       });
     }
 
-    // Run button actions sequentially, even for quick taps.
+    // Serialize PTT operations to handle quick key presses.
     function queueAction(action) {
       turnQueue = turnQueue.then(action).catch(async (error) => {
         console.error(error);
         status.textContent = "Error: " + error.message;
+        recording = false;
 
         if (room) {
           await room.localParticipant
             .setMicrophoneEnabled(false)
             .catch(console.error);
-          await callAgent("cancel_turn").catch(console.error);
+
+          await callAgent("cancel_turn")
+            .catch(console.error);
         }
       });
     }
 
-    // Connect to LiveKit
+    function resetControls() {
+      room = null;
+      pointerId = null;
+      spaceHeld = false;
+      recording = false;
+      micReady = false;
+
+      talkButton.classList.remove("active");
+      talkButton.disabled = true;
+      voiceToggle.disabled = true;
+      textInput.disabled = true;
+      sendButton.disabled = true;
+
+      connectButton.disabled = false;
+      disconnectButton.disabled = true;
+      audioContainer.innerHTML = "";
+      status.textContent = "Disconnected";
+    }
+
+    // CONNECT
     connectButton.onclick = async () => {
       connectButton.disabled = true;
       status.textContent = "Connecting...";
 
       const newRoom = new LivekitClient.Room();
 
+      // Receive voice transcriptions and assistant text.
+      // Ignore interim segments to avoid duplicate bubbles.
+      newRoom.registerTextStreamHandler(
+        "lk.transcription",
+        async (reader, participantInfo) => {
+          const attrs = reader.info.attributes || {};
+
+          if (attrs["lk.transcription_final"] === "false") {
+            return;
+          }
+
+          const role =
+            participantInfo.identity ===
+            newRoom.localParticipant.identity
+              ? "user"
+              : "assistant";
+
+          const key =
+            participantInfo.identity + ":" +
+            (attrs["lk.segment_id"] || reader.info.id);
+
+          let content = transcriptSegments.get(key);
+          let accumulated = "";
+
+          try {
+            for await (const chunk of reader) {
+              accumulated += chunk;
+
+              if (!content && accumulated.trim()) {
+                content = addMessage(role, accumulated);
+                transcriptSegments.set(key, content);
+              }
+
+              if (content) {
+                content.textContent = accumulated;
+                messages.scrollTop = messages.scrollHeight;
+              }
+            }
+            if (
+              role === "assistant" &&
+              room === newRoom &&
+              !recording
+            ) {
+              status.textContent = "Connected — ready";
+            }
+            
+          } catch (error) {
+            console.error("Transcription error", error);
+          }
+        }
+      );
+
+      newRoom.on(
+        LivekitClient.RoomEvent.TrackSubscribed,
+        (track) => {
+          if (track.kind === LivekitClient.Track.Kind.Audio) {
+            audioContainer.appendChild(track.attach());
+          }
+        }
+      );
+
+      newRoom.on(
+        LivekitClient.RoomEvent.TrackUnsubscribed,
+        (track) => {
+          track.detach().forEach(el => el.remove());
+        }
+      );
+
+      newRoom.on(
+        LivekitClient.RoomEvent.ParticipantConnected,
+        updateAvailability
+      );
+
+      newRoom.on(
+        LivekitClient.RoomEvent.ParticipantDisconnected,
+        updateAvailability
+      );
+
+      newRoom.on(
+        LivekitClient.RoomEvent.Disconnected,
+        resetControls
+      );
+
       try {
+        // Existing public GET /token endpoint.
         const response = await fetch(
           BACKEND_URL + "/token"
         );
@@ -181,46 +417,6 @@
 
         const data = await response.json();
 
-        newRoom.on(
-          LivekitClient.RoomEvent.TrackSubscribed,
-          (track) => {
-            if (track.kind === LivekitClient.Track.Kind.Audio) {
-              audioContainer.appendChild(track.attach());
-            }
-          }
-        );
-
-        newRoom.on(
-          LivekitClient.RoomEvent.TrackUnsubscribed,
-          (track) => {
-            track.detach().forEach(el => el.remove());
-          }
-        );
-
-        newRoom.on(
-          LivekitClient.RoomEvent.ParticipantConnected,
-          updateStatus
-        );
-
-        newRoom.on(
-          LivekitClient.RoomEvent.ParticipantDisconnected,
-          updateStatus
-        );
-
-        newRoom.on(
-          LivekitClient.RoomEvent.Disconnected,
-          () => {
-            room = null;
-            pointerId = null;
-            talkButton.classList.remove("active");
-            talkButton.disabled = true;
-            connectButton.disabled = false;
-            disconnectButton.disabled = true;
-            status.textContent = "Disconnected";
-            audioContainer.innerHTML = "";
-          }
-        );
-
         await newRoom.connect(
           data.server_url,
           data.participant_token
@@ -228,66 +424,120 @@
 
         room = newRoom;
 
+        // Enable browser speaker playback.
         await room.startAudio();
 
-        // Request mic permission once, then mute it.
-        await room.localParticipant
-          .setMicrophoneEnabled(true);
-        await room.localParticipant
-          .setMicrophoneEnabled(false);
-
         disconnectButton.disabled = false;
-        updateStatus();
+        transcriptSegments.clear();
+        messages.innerHTML = "";
+        updateAvailability();
+
+      } catch (error) {
+        console.error(error);
+        await newRoom.disconnect().catch(console.error);
+        resetControls();
+        status.textContent = "Error: " + error.message;
+      }
+    };
+
+    // TEXT INPUT
+    composer.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const text = textInput.value.trim();
+
+      if (!room || !getAgentIdentity() || !text) return;
+
+      if (pointerId !== null || spaceHeld || recording) {
+        return;
+      }
+
+      sendButton.disabled = true;
+
+      try {
+        // AgentSession handles lk.chat automatically.
+        await room.localParticipant.sendText(text, {
+          topic: "lk.chat",
+        });
+
+        addMessage("user", text);
+        textInput.value = "";
+        status.textContent = "Processing...";
 
       } catch (error) {
         console.error(error);
         status.textContent = "Error: " + error.message;
-
-        await newRoom.disconnect();
-        room = null;
-        connectButton.disabled = false;
+      } finally {
+        sendButton.disabled = !getAgentIdentity();
       }
-    };
+    });
 
-    // Start speaking when button is pressed
-    talkButton.addEventListener("pointerdown", (event) => {
-        if (
-            !room ||
-            talkButton.disabled ||
-            pointerId !== null ||
-            spaceHeld
-        ) {
-            return;
-        }
+    textInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        composer.requestSubmit();
+      }
+    });
 
-      event.preventDefault();
-      pointerId = event.pointerId;
-      talkButton.setPointerCapture(pointerId);
+    // VOICE OUTPUT TOGGLE
+    voiceToggle.addEventListener("change", async () => {
+      const enabled = voiceToggle.checked;
+      voiceToggle.disabled = true;
+
+      try {
+        await callAgent(
+          "set_voice_replies",
+          enabled ? "true" : "false"
+        );
+      } catch (error) {
+        console.error(error);
+        voiceToggle.checked = !enabled;
+        status.textContent = "Could not change voice setting";
+      } finally {
+        voiceToggle.disabled = !getAgentIdentity();
+      }
+    });
+
+    // SHARED PUSH-TO-TALK FUNCTIONS
+    function startTalk() {
       talkButton.classList.add("active");
 
       queueAction(async () => {
         if (!room) return;
 
+        // Request mic access only when first needed.
+        if (!micReady) {
+          status.textContent = "Allow microphone access...";
+
+          await room.localParticipant
+            .setMicrophoneEnabled(true);
+
+          await room.localParticipant
+            .setMicrophoneEnabled(false);
+
+          micReady = true;
+        }
+
         await callAgent("start_turn");
+
         await room.localParticipant
           .setMicrophoneEnabled(true);
 
+        recording = true;
         status.textContent = "Listening...";
       });
-    });
+    }
 
-    // Finish speaking when button is released
-    function releaseTalk(event, canceled = false) {
-      if (pointerId !== event.pointerId) return;
-
-      pointerId = null;
+    function stopTalk(canceled = false) {
       talkButton.classList.remove("active");
 
       queueAction(async () => {
-        if (!room) return;
+        if (!room || !recording) return;
 
         await room.localParticipant
           .setMicrophoneEnabled(false);
+
+        recording = false;
 
         await callAgent(
           canceled ? "cancel_turn" : "end_turn"
@@ -299,115 +549,103 @@
       });
     }
 
+    // MOUSE / TOUCH
+    talkButton.addEventListener("pointerdown", (event) => {
+      if (
+        talkButton.disabled ||
+        pointerId !== null ||
+        spaceHeld
+      ) return;
+
+      event.preventDefault();
+      pointerId = event.pointerId;
+
+      talkButton.setPointerCapture(pointerId);
+      startTalk();
+    });
+
+    function releasePointer(event, canceled = false) {
+      if (event.pointerId !== pointerId) return;
+
+      pointerId = null;
+      stopTalk(canceled);
+    }
+
     talkButton.addEventListener(
       "pointerup",
-      event => releaseTalk(event)
+      event => releasePointer(event)
     );
 
     talkButton.addEventListener(
       "pointercancel",
-      event => releaseTalk(event, true)
+      event => releasePointer(event, true)
     );
 
-    // SPACEBAR: Start speaking
+    // SPACEBAR
     document.addEventListener("keydown", (event) => {
-        if (event.code !== "Space" || event.repeat) return;
+      if (event.code !== "Space") return;
 
-        // Don't interfere with text input fields
-        if (
-            event.target.matches("input, textarea, select") ||
-            event.target.isContentEditable
-        ) return;
+      const target = event.target;
 
-        if (
-            !room ||
-            talkButton.disabled ||
-            spaceHeld ||
-            pointerId !== null
-        ) return;
+      // Space should type normally inside text fields.
+      if (
+        target.isContentEditable ||
+        target.matches("input, textarea, select") ||
+        (target.matches("button") && target !== talkButton)
+      ) return;
 
-        event.preventDefault(); // Prevent page scrolling
+      if (
+        talkButton.disabled ||
+        pointerId !== null
+      ) return;
 
-        spaceHeld = true;
-        talkButton.classList.add("active");
+      event.preventDefault();
 
-        queueAction(async () => {
-            if (!room) return;
+      if (spaceHeld || event.repeat) return;
 
-            await callAgent("start_turn");
-
-            await room.localParticipant
-                .setMicrophoneEnabled(true);
-
-            status.textContent = "Listening...";
-        });
+      spaceHeld = true;
+      startTalk();
     });
 
-
-    // SPACEBAR: Stop speaking
     document.addEventListener("keyup", (event) => {
-        if (event.code !== "Space" || !spaceHeld) return;
+      if (event.code !== "Space" || !spaceHeld) return;
 
-        event.preventDefault();
-        releaseSpace();
+      event.preventDefault();
+      spaceHeld = false;
+      stopTalk();
     });
 
-    function releaseSpace(canceled = false) {
-        if (!spaceHeld) return;
-
-        spaceHeld = false;
-        talkButton.classList.remove("active");
-
-        queueAction(async () => {
-            if (!room) return;
-
-            await room.localParticipant
-                .setMicrophoneEnabled(false);
-
-            await callAgent(
-                canceled ? "cancel_turn" : "end_turn"
-            );
-
-            status.textContent = canceled
-                ? "Recording canceled"
-                : "Processing...";
-        });
-    }
-
-    // Cancel if the browser loses focus while Space is held
-    window.addEventListener("blur", () => {
-        releaseSpace(true);
-    });
-
-
-    // Avoid leaving the microphone active if focus is lost.
     window.addEventListener("blur", () => {
       if (pointerId !== null) {
-        releaseTalk({ pointerId }, true);
+        pointerId = null;
+        stopTalk(true);
+      }
+
+      if (spaceHeld) {
+        spaceHeld = false;
+        stopTalk(true);
       }
     });
 
-    // Disconnect
+    // DISCONNECT
     disconnectButton.onclick = async () => {
       disconnectButton.disabled = true;
       talkButton.disabled = true;
 
-      if (pointerId !== null) {
-        releaseTalk({ pointerId }, true);
+      if (pointerId !== null || spaceHeld) {
+        pointerId = null;
+        spaceHeld = false;
+        stopTalk(true);
       }
 
-        releaseSpace(true);
-        await turnQueue;
+      await turnQueue;
 
       if (room) {
         await room.disconnect();
-        room = null;
       }
 
-      audioContainer.innerHTML = "";
-      status.textContent = "Disconnected";
-      connectButton.disabled = false;
+      resetControls();
     };
-    </script>
+  </script>
 </body>
 </html>
