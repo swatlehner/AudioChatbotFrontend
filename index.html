@@ -146,21 +146,23 @@
   <h1>Bavarian Voice Assistant</h1>
 
   <div class="controls">
-    <div>
-      <button id="connectButton">Connect</button>
-      <button id="disconnectButton" disabled>
-        Disconnect
-      </button>
-    </div>
+    <span>Bavarian Voice Assistant</span>
 
     <label>
-      <input id="voiceToggle"
-             type="checkbox" disabled>
+      <input
+        id="voiceToggle"
+        type="checkbox"
+        disabled
+      >
       Spoken replies
     </label>
   </div>
 
-  <p id="status">Disconnected</p>
+  <p id="status">Connecting...</p>
+
+  <button id="retryButton" hidden>
+    Retry connection
+  </button>
 
   <div id="messages"
        role="log"
@@ -198,8 +200,7 @@
     const $ = (id) => document.getElementById(id);
 
     const status = $("status");
-    const connectButton = $("connectButton");
-    const disconnectButton = $("disconnectButton");
+    const retryButton = $("retryButton");
     const talkButton = $("talkButton");
     const voiceToggle = $("voiceToggle");
     const composer = $("composer");
@@ -305,22 +306,25 @@
 
       talkButton.classList.remove("active");
       talkButton.disabled = true;
+
+      voiceToggle.checked = false;
       voiceToggle.disabled = true;
+
       textInput.disabled = true;
       sendButton.disabled = true;
 
-      connectButton.disabled = false;
-      disconnectButton.disabled = true;
       audioContainer.innerHTML = "";
       status.textContent = "Disconnected";
     }
 
-    // CONNECT
-    connectButton.onclick = async () => {
-      connectButton.disabled = true;
+    // CONNECT AUTOMATICALLY
+    async function connect() {
+      retryButton.hidden = true;
       status.textContent = "Connecting...";
 
-      const newRoom = new LivekitClient.Room();
+      const newRoom = new LivekitClient.Room({
+        disconnectOnPageLeave: true
+      });
 
       // Receive voice transcriptions and assistant text.
       // Ignore interim segments to avoid duplicate bubbles.
@@ -328,10 +332,6 @@
         "lk.transcription",
         async (reader, participantInfo) => {
           const attrs = reader.info.attributes || {};
-
-          if (attrs["lk.transcription_final"] === "false") {
-            return;
-          }
 
           const role =
             participantInfo.identity ===
@@ -350,16 +350,18 @@
             for await (const chunk of reader) {
               accumulated += chunk;
 
-              if (!content && accumulated.trim()) {
+              if (!accumulated.trim()) continue;
+
+              if (!content) {
                 content = addMessage(role, accumulated);
                 transcriptSegments.set(key, content);
+              } else {
+                content.textContent = accumulated;
               }
 
-              if (content) {
-                content.textContent = accumulated;
-                messages.scrollTop = messages.scrollHeight;
-              }
+              messages.scrollTop = messages.scrollHeight;
             }
+
             if (
               role === "assistant" &&
               room === newRoom &&
@@ -367,7 +369,7 @@
             ) {
               status.textContent = "Connected — ready";
             }
-            
+
           } catch (error) {
             console.error("Transcription error", error);
           }
@@ -402,7 +404,13 @@
 
       newRoom.on(
         LivekitClient.RoomEvent.Disconnected,
-        resetControls
+        () => {
+          if (room !== newRoom) return;
+
+          resetControls();
+          retryButton.hidden = false;
+          status.textContent = "Connection closed";
+        }
       );
 
       try {
@@ -424,21 +432,22 @@
 
         room = newRoom;
 
-        // Enable browser speaker playback.
-        await room.startAudio();
-
-        disconnectButton.disabled = false;
+        // Do not start audio automatically.
+        // Browsers may require a user interaction.
         transcriptSegments.clear();
         messages.innerHTML = "";
         updateAvailability();
 
       } catch (error) {
         console.error(error);
+
         await newRoom.disconnect().catch(console.error);
+
         resetControls();
         status.textContent = "Error: " + error.message;
+        retryButton.hidden = false;
       }
-    };
+    }
 
     // TEXT INPUT
     composer.addEventListener("submit", async (event) => {
@@ -485,6 +494,12 @@
       voiceToggle.disabled = true;
 
       try {
+        if (enabled) {
+          // Called from the user's checkbox interaction,
+          // allowing browser audio playback to start.
+          await room.startAudio();
+        }
+
         await callAgent(
           "set_voice_replies",
           enabled ? "true" : "false"
@@ -627,25 +642,13 @@
       }
     });
 
-    // DISCONNECT
-    disconnectButton.onclick = async () => {
-      disconnectButton.disabled = true;
-      talkButton.disabled = true;
-
-      if (pointerId !== null || spaceHeld) {
-        pointerId = null;
-        spaceHeld = false;
-        stopTalk(true);
-      }
-
-      await turnQueue;
-
-      if (room) {
-        await room.disconnect();
-      }
-
-      resetControls();
+    // RETRY ONLY IF CONNECTION FAILED
+    retryButton.onclick = () => {
+      void connect();
     };
+
+    // CONNECT AUTOMATICALLY ON PAGE LOAD
+    void connect();
   </script>
 </body>
 </html>
