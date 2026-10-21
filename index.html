@@ -139,6 +139,48 @@
       padding: 3px 7px;
       border-radius: 5px;
     }
+
+
+    .product-selector {
+      background: #f6f7f9;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 16px;
+      margin: 16px 0;
+    }
+
+    .product-selector h3 {
+      margin-top: 0;
+    }
+
+    .product-selector label {
+      display: block;
+      font-size: 14px;
+      margin-top: 12px;
+      margin-bottom: 5px;
+    }
+
+    .product-selector select {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 7px;
+      background: white;
+      font: inherit;
+    }
+
+    .product-selector select:disabled {
+      opacity: 0.55;
+    }
+
+    #productStatus {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 0;
+    }
+
   </style>
 </head>
 
@@ -159,6 +201,29 @@
   </div>
 
   <p id="status">Connecting...</p>
+
+
+  <div class="product-selector">
+    <h3>Select a product</h3>
+
+    <label for="areaSelect">Area</label>
+    <select id="areaSelect" disabled>
+      <option value="">Choose area...</option>
+    </select>
+
+    <label for="machineSelect">Machine</label>
+    <select id="machineSelect" disabled>
+      <option value="">Choose machine...</option>
+    </select>
+
+    <label for="variantSelect">Variant</label>
+    <select id="variantSelect" disabled>
+      <option value="">Choose variant...</option>
+    </select>
+
+    <p id="productStatus">No product selected</p>
+  </div>
+
 
   <button id="retryButton" hidden>
     Retry connection
@@ -208,6 +273,10 @@
     const sendButton = $("sendButton");
     const messages = $("messages");
     const audioContainer = $("audio");
+    const areaSelect = $("areaSelect");
+    const machineSelect = $("machineSelect");
+    const variantSelect = $("variantSelect");
+    const productStatus = $("productStatus");
 
     let room = null;
     let pointerId = null;
@@ -216,7 +285,151 @@
     let micReady = false;
     let turnQueue = Promise.resolve();
 
+    let manualTree = null;
+    let productPending = 0;
+    let productError = "";
+    let productQueue = Promise.resolve();
+
     const transcriptSegments = new Map();
+
+
+    // Fill a dropdown with folder names.
+    function populateSelect(select, values, placeholder) {
+      select.replaceChildren(
+        new Option(placeholder, "")
+      );
+
+      for (const value of values) {
+        select.add(new Option(value, value));
+      }
+    }
+
+
+    // Load the three-level folder tree from Railway.
+    async function loadManuals() {
+      try {
+        const response = await fetch(
+          BACKEND_URL + "/manuals"
+        );
+
+        if (!response.ok) {
+          throw new Error("Cannot load product list");
+        }
+
+        manualTree = await response.json();
+
+        populateSelect(
+          areaSelect,
+          Object.keys(manualTree),
+          "Choose area..."
+        );
+
+        updateAvailability();
+
+      } catch (error) {
+        console.error(error);
+        productStatus.textContent =
+          "Product list unavailable: " + error.message;
+      }
+    }
+
+
+    // Send the selected product to the LiveKit agent.
+    // Changes are serialized so rapid dropdown selections
+    // cannot be applied out of order.
+    function queueProductSelection() {
+      const selectedRoom = room;
+
+      const area = areaSelect.value;
+      const machine = machineSelect.value;
+      const variant = variantSelect.value;
+
+      const selection = (area && machine && variant)
+        ? { area, machine, variant }
+        : { clear: true };
+
+      productPending++;
+      productError = "";
+      updateAvailability();
+
+      productQueue = productQueue
+        .catch(() => {})
+        .then(async () => {
+          if (
+            !room ||
+            room !== selectedRoom ||
+            !getAgentIdentity()
+          ) return;
+
+          productStatus.textContent = "Loading product...";
+
+          await room.localParticipant.performRpc({
+            destinationIdentity: getAgentIdentity(),
+            method: "set_product",
+            payload: JSON.stringify(selection),
+            responseTimeout: 60000,
+          });
+
+          productError = "";
+
+          productStatus.textContent = selection.clear
+            ? "No product selected"
+            : `Active product: ${area} / ${machine} / ${variant}`;
+        })
+        .catch(error => {
+          console.error("Product selection failed:", error);
+          productError = error.message;
+          productStatus.textContent =
+            "Could not load product: " + error.message;
+        })
+        .finally(() => {
+          productPending--;
+          updateAvailability();
+        });
+    }
+
+
+    // AREA CHANGED
+    areaSelect.addEventListener("change", () => {
+      const machines = manualTree[areaSelect.value] || {};
+
+      populateSelect(
+        machineSelect,
+        Object.keys(machines),
+        "Choose machine..."
+      );
+
+      populateSelect(
+        variantSelect,
+        [],
+        "Choose variant..."
+      );
+
+      queueProductSelection();
+    });
+
+
+    // MACHINE CHANGED
+    machineSelect.addEventListener("change", () => {
+      const variants =
+        manualTree[areaSelect.value]?.[machineSelect.value]
+        || [];
+
+      populateSelect(
+        variantSelect,
+        variants,
+        "Choose variant..."
+      );
+
+      queueProductSelection();
+    });
+
+
+    // VARIANT CHANGED
+    variantSelect.addEventListener("change", () => {
+      queueProductSelection();
+    });
+
 
     function getAgentIdentity() {
       if (!room) return null;
@@ -230,21 +443,45 @@
       return null;
     }
 
+
     function updateAvailability() {
       const connected = !!room;
       const agentReady = !!getAgentIdentity();
 
-      textInput.disabled = !agentReady;
-      sendButton.disabled = !agentReady;
-      talkButton.disabled = !agentReady;
+      const canChat =
+        agentReady &&
+        productPending === 0 &&
+        !productError;
+
+      textInput.disabled = !canChat;
+      sendButton.disabled = !canChat;
+      talkButton.disabled = !canChat;
       voiceToggle.disabled = !agentReady;
 
+      // Product dropdown availability
+      areaSelect.disabled = !agentReady || !manualTree;
+
+      machineSelect.disabled =
+        !agentReady ||
+        !manualTree ||
+        !areaSelect.value;
+
+      variantSelect.disabled =
+        !agentReady ||
+        !manualTree ||
+        !machineSelect.value;
+
       if (connected && !recording) {
-        status.textContent = agentReady
-          ? "Connected — ready"
-          : "Waiting for agent...";
+        status.textContent = !agentReady
+          ? "Waiting for agent..."
+          : productPending > 0
+            ? "Updating product..."
+            : productError
+              ? "Product selection failed"
+              : "Connected — ready";
       }
     }
+
 
     function addMessage(role, text) {
       const bubble = document.createElement("div");
@@ -299,6 +536,26 @@
 
     function resetControls() {
       room = null;
+      areaSelect.value = "";
+
+      populateSelect(
+        machineSelect,
+        [],
+        "Choose machine..."
+      );
+
+      populateSelect(
+        variantSelect,
+        [],
+        "Choose variant..."
+      );
+
+      areaSelect.disabled = true;
+      machineSelect.disabled = true;
+      variantSelect.disabled = true;
+
+      productStatus.textContent = "No product selected";
+
       pointerId = null;
       spaceHeld = false;
       recording = false;
@@ -477,7 +734,10 @@
         console.error(error);
         status.textContent = "Error: " + error.message;
       } finally {
-        sendButton.disabled = !getAgentIdentity();
+        sendButton.disabled =
+                  !getAgentIdentity() ||
+                  productPending > 0 ||
+                  !!productError;
       }
     });
 
@@ -647,7 +907,8 @@
       void connect();
     };
 
-    // CONNECT AUTOMATICALLY ON PAGE LOAD
+    // LOAD PRODUCTS AND CONNECT AUTOMATICALLY
+    void loadManuals();
     void connect();
   </script>
 </body>
