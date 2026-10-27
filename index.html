@@ -637,6 +637,10 @@
         LivekitClient.RoomEvent.TrackSubscribed,
         (track) => {
           if (track.kind === LivekitClient.Track.Kind.Audio) {
+
+            // Request 200 ms of audio playout buffering.
+            track.setPlayoutDelay(0.2);
+
             audioContainer.appendChild(track.attach());
           }
         }
