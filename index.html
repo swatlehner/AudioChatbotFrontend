@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport"
         content="width=device-width, initial-scale=1">
-  <title>Bavarian Voice Assistant</title>
+  <title>Lehner Maschinenbau Betriebsanleitungs Assistent</title>
 
   <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.23.0/dist/livekit-client.umd.min.js"></script>
 
@@ -185,10 +185,10 @@
 </head>
 
 <body>
-  <h1>Bavarian Voice Assistant</h1>
+  <h1>Lehner Maschinenbau Betriebsanleitungs Assistent</h1>
 
   <div class="controls">
-    <span>Bavarian Voice Assistant</span>
+    <span>Lehner Maschinenbau Betriebsanleitungs Assistent</span>
 
     <label>
       <input
@@ -289,6 +289,8 @@
     let productPending = 0;
     let productError = "";
     let productQueue = Promise.resolve();
+    let conversationReady = false;
+    let selectionRevision = 0;
 
     const transcriptSegments = new Map();
 
@@ -334,19 +336,31 @@
     }
 
 
-    // Send the selected product to the LiveKit agent.
-    // Changes are serialized so rapid dropdown selections
-    // cannot be applied out of order.
+    // Every complete selection starts a separate room and conversation.
     function queueProductSelection() {
-      const selectedRoom = room;
+      const revision = ++selectionRevision;
 
       const area = areaSelect.value;
       const machine = machineSelect.value;
       const variant = variantSelect.value;
 
-      const selection = (area && machine && variant)
+      const selection = area && machine && variant
         ? { area, machine, variant }
-        : { clear: true };
+        : null;
+
+      conversationReady = false;
+      transcriptSegments.clear();
+      messages.replaceChildren();
+      textInput.value = "";
+
+      // Silence any buffered audio immediately.
+      audioContainer.querySelectorAll("audio").forEach(el => {
+        el.muted = true;
+      });
+
+      pointerId = null;
+      spaceHeld = false;
+      stopTalk(true);
 
       productPending++;
       productError = "";
@@ -355,32 +369,39 @@
       productQueue = productQueue
         .catch(() => {})
         .then(async () => {
-          if (
-            !room ||
-            room !== selectedRoom ||
-            !getAgentIdentity()
-          ) return;
+          await turnQueue;
+
+          if (revision !== selectionRevision) return;
+
+          const previousRoom = room;
+          room = null;
+          micReady = false;
+          audioContainer.replaceChildren();
+
+          if (previousRoom) {
+            await previousRoom.disconnect();
+          }
+
+          if (revision !== selectionRevision) return;
+
+          if (!selection) {
+            productStatus.textContent = "No product selected";
+            status.textContent =
+              "Choose an area, machine, and variant";
+            return;
+          }
 
           productStatus.textContent = "Loading product...";
-
-          await room.localParticipant.performRpc({
-            destinationIdentity: getAgentIdentity(),
-            method: "set_product",
-            payload: JSON.stringify(selection),
-            responseTimeout: 60000,
-          });
-
-          productError = "";
-
-          productStatus.textContent = selection.clear
-            ? "No product selected"
-            : `Active product: ${area} / ${machine} / ${variant}`;
+          await connect(selection, revision);
         })
         .catch(error => {
+          if (revision !== selectionRevision) return;
+
           console.error("Product selection failed:", error);
           productError = error.message;
           productStatus.textContent =
             "Could not load product: " + error.message;
+          retryButton.hidden = false;
         })
         .finally(() => {
           productPending--;
@@ -445,40 +466,40 @@
 
 
     function updateAvailability() {
-      const connected = !!room;
       const agentReady = !!getAgentIdentity();
 
       const canChat =
         agentReady &&
+        conversationReady &&
         productPending === 0 &&
         !productError;
 
       textInput.disabled = !canChat;
       sendButton.disabled = !canChat;
       talkButton.disabled = !canChat;
-      voiceToggle.disabled = !agentReady;
+      voiceToggle.disabled = !canChat;
 
-      // Product dropdown availability
-      areaSelect.disabled = !agentReady || !manualTree;
+      areaSelect.disabled = !manualTree;
 
       machineSelect.disabled =
-        !agentReady ||
-        !manualTree ||
-        !areaSelect.value;
+        !manualTree || !areaSelect.value;
 
       variantSelect.disabled =
-        !agentReady ||
-        !manualTree ||
-        !machineSelect.value;
+        !manualTree || !machineSelect.value;
 
-      if (connected && !recording) {
-        status.textContent = !agentReady
-          ? "Waiting for agent..."
-          : productPending > 0
-            ? "Updating product..."
-            : productError
-              ? "Product selection failed"
-              : "Connected — ready";
+      if (recording) return;
+
+      if (productPending > 0) {
+        status.textContent = "Updating product...";
+      } else if (productError) {
+        status.textContent = "Product selection failed";
+      } else if (room && !agentReady) {
+        status.textContent = "Waiting for agent...";
+      } else if (canChat) {
+        status.textContent = "Connected — ready";
+      } else {
+        status.textContent =
+          "Choose an area, machine, and variant";
       }
     }
 
@@ -536,6 +557,10 @@
 
     function resetControls() {
       room = null;
+      conversationReady = false;
+      transcriptSegments.clear();
+      messages.replaceChildren();
+      textInput.value = "";
       areaSelect.value = "";
 
       populateSelect(
@@ -575,7 +600,10 @@
     }
 
     // CONNECT AUTOMATICALLY
-    async function connect() {
+    async function connect(
+      selection = null,
+      revision = selectionRevision
+    ) {
       retryButton.hidden = true;
       status.textContent = "Connecting...";
 
@@ -583,11 +611,21 @@
         disconnectOnPageLeave: true
       });
 
-      // Receive voice transcriptions and assistant text.
-      // Ignore interim segments to avoid duplicate bubbles.
+      room = newRoom;
+      conversationReady = false;
+      transcriptSegments.clear();
+      messages.replaceChildren();
+
+      // Receive text only from the current conversation.
       newRoom.registerTextStreamHandler(
         "lk.transcription",
         async (reader, participantInfo) => {
+          const acceptsStream = () =>
+            room === newRoom &&
+            revision === selectionRevision &&
+            conversationReady;
+
+          const accepted = acceptsStream();
           const attrs = reader.info.attributes || {};
 
           const role =
@@ -607,7 +645,11 @@
             for await (const chunk of reader) {
               accumulated += chunk;
 
-              if (!accumulated.trim()) continue;
+              if (
+                !accepted ||
+                !acceptsStream() ||
+                !accumulated.trim()
+              ) continue;
 
               if (!content) {
                 content = addMessage(role, accumulated);
@@ -621,7 +663,8 @@
 
             if (
               role === "assistant" &&
-              room === newRoom &&
+              accepted &&
+              acceptsStream() &&
               !recording
             ) {
               status.textContent = "Connected — ready";
@@ -637,11 +680,18 @@
         LivekitClient.RoomEvent.TrackSubscribed,
         (track) => {
           if (track.kind === LivekitClient.Track.Kind.Audio) {
-
-            // Request 200 ms of audio playout buffering.
             track.setPlayoutDelay(0.2);
 
-            audioContainer.appendChild(track.attach());
+            if (
+              room !== newRoom ||
+              revision !== selectionRevision
+            ) return;
+
+            const element = track.attach();
+            element.muted =
+              !voiceToggle.checked || !conversationReady;
+
+            audioContainer.appendChild(element);
           }
         }
       );
@@ -655,18 +705,25 @@
 
       newRoom.on(
         LivekitClient.RoomEvent.ParticipantConnected,
-        updateAvailability
+        () => {
+          if (room === newRoom) updateAvailability();
+        }
       );
 
       newRoom.on(
         LivekitClient.RoomEvent.ParticipantDisconnected,
-        updateAvailability
+        () => {
+          if (room === newRoom) updateAvailability();
+        }
       );
 
       newRoom.on(
         LivekitClient.RoomEvent.Disconnected,
         () => {
-          if (room !== newRoom) return;
+          if (
+            room !== newRoom ||
+            revision !== selectionRevision
+          ) return;
 
           resetControls();
           retryButton.hidden = false;
@@ -675,10 +732,7 @@
       );
 
       try {
-        // Existing public GET /token endpoint.
-        const response = await fetch(
-          BACKEND_URL + "/token"
-        );
+        const response = await fetch(BACKEND_URL + "/token");
 
         if (!response.ok) {
           throw new Error("Could not get room token");
@@ -686,27 +740,119 @@
 
         const data = await response.json();
 
+        if (revision !== selectionRevision) {
+          if (room === newRoom) room = null;
+          await newRoom.disconnect();
+          return;
+        }
+
         await newRoom.connect(
           data.server_url,
           data.participant_token
         );
 
-        room = newRoom;
+        // Wait for the agent and its RPC handlers.
+        const deadline = Date.now() + 45000;
+        let result;
 
-        // Do not start audio automatically.
-        // Browsers may require a user interaction.
-        transcriptSegments.clear();
-        messages.innerHTML = "";
+        while (true) {
+          if (
+            room !== newRoom ||
+            revision !== selectionRevision
+          ) {
+            if (room === newRoom) room = null;
+            await newRoom.disconnect();
+            return;
+          }
+
+          const identity = getAgentIdentity();
+
+          if (identity) {
+            try {
+              result = await newRoom.localParticipant.performRpc({
+                destinationIdentity: identity,
+                method: "set_product",
+                payload: JSON.stringify(
+                  selection || { clear: true }
+                ),
+                responseTimeout: 60000,
+              });
+              break;
+
+            } catch (error) {
+              // Agent may appear before its handlers are registered.
+              // 1400: unsupported method; 1503: recipient disconnected.
+              const retryable = [1400, 1503].includes(error.code);
+
+              if (!retryable || Date.now() >= deadline) {
+                throw error;
+              }
+            }
+
+          } else if (Date.now() >= deadline) {
+            throw new Error(
+              "Agent did not become ready. Please retry."
+            );
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+
+        if (revision !== selectionRevision) {
+          if (room === newRoom) room = null;
+          await newRoom.disconnect();
+          return;
+        }
+
+        // Preserve the user's audio preference across products.
+        await callAgent(
+          "set_voice_replies",
+          voiceToggle.checked ? "true" : "false"
+        );
+
+        if (revision !== selectionRevision) {
+          if (room === newRoom) room = null;
+          await newRoom.disconnect();
+          return;
+        }
+
+        const { greeting } = JSON.parse(result);
+        addMessage("assistant", greeting);
+
+        conversationReady = !!selection;
+
+        audioContainer.querySelectorAll("audio").forEach(el => {
+          el.muted =
+            !voiceToggle.checked || !conversationReady;
+        });
+
+        productStatus.textContent = selection
+          ? `Active product: ${selection.area} / ${selection.machine} / ${selection.variant}`
+          : "No product selected";
+
+        retryButton.hidden = true;
         updateAvailability();
 
       } catch (error) {
         console.error(error);
 
+        if (room === newRoom) {
+          room = null;
+          audioContainer.replaceChildren();
+        }
+
         await newRoom.disconnect().catch(console.error);
 
-        resetControls();
-        status.textContent = "Error: " + error.message;
+        if (revision !== selectionRevision) return;
+
+        conversationReady = false;
+        productError = error.message;
+
+        productStatus.textContent =
+          "Could not initialize conversation: " + error.message;
+
         retryButton.hidden = false;
+        updateAvailability();
       }
     }
 
@@ -716,19 +862,31 @@
 
       const text = textInput.value.trim();
 
-      if (!room || !getAgentIdentity() || !text) return;
+      if (
+        !room ||
+        !getAgentIdentity() ||
+        !text ||
+        !conversationReady ||
+        productPending > 0 ||
+        productError
+      ) return;
 
-      if (pointerId !== null || spaceHeld || recording) {
-        return;
-      }
+      if (pointerId !== null || spaceHeld || recording) return;
+
+      const sendingRoom = room;
+      const sendingRevision = selectionRevision;
 
       sendButton.disabled = true;
 
       try {
-        // AgentSession handles lk.chat automatically.
-        await room.localParticipant.sendText(text, {
+        await sendingRoom.localParticipant.sendText(text, {
           topic: "lk.chat",
         });
+
+        if (
+          room !== sendingRoom ||
+          sendingRevision !== selectionRevision
+        ) return;
 
         addMessage("user", text);
         textInput.value = "";
@@ -736,12 +894,16 @@
 
       } catch (error) {
         console.error(error);
-        status.textContent = "Error: " + error.message;
+
+        if (
+          room === sendingRoom &&
+          sendingRevision === selectionRevision
+        ) {
+          status.textContent = "Error: " + error.message;
+        }
+
       } finally {
-        sendButton.disabled =
-                  !getAgentIdentity() ||
-                  productPending > 0 ||
-                  !!productError;
+        updateAvailability();
       }
     });
 
@@ -754,26 +916,51 @@
 
     // VOICE OUTPUT TOGGLE
     voiceToggle.addEventListener("change", async () => {
+      const voiceRoom = room;
+      const revision = selectionRevision;
       const enabled = voiceToggle.checked;
+
+      if (!voiceRoom || !conversationReady) return;
+
+      const stillCurrent = () =>
+        room === voiceRoom &&
+        revision === selectionRevision;
+
       voiceToggle.disabled = true;
+
+      audioContainer.querySelectorAll("audio").forEach(el => {
+        el.muted = !enabled;
+      });
 
       try {
         if (enabled) {
-          // Called from the user's checkbox interaction,
-          // allowing browser audio playback to start.
-          await room.startAudio();
+          await voiceRoom.startAudio();
         }
+
+        if (!stillCurrent()) return;
 
         await callAgent(
           "set_voice_replies",
           enabled ? "true" : "false"
         );
+
       } catch (error) {
         console.error(error);
+
+        if (!stillCurrent()) return;
+
         voiceToggle.checked = !enabled;
+
+        audioContainer.querySelectorAll("audio").forEach(el => {
+          el.muted = enabled;
+        });
+
         status.textContent = "Could not change voice setting";
+
       } finally {
-        voiceToggle.disabled = !getAgentIdentity();
+        if (stillCurrent()) {
+          updateAvailability();
+        }
       }
     });
 
@@ -782,7 +969,12 @@
       talkButton.classList.add("active");
 
       queueAction(async () => {
-        if (!room) return;
+        if (
+          !room ||
+          !conversationReady ||
+          productPending > 0 ||
+          productError
+        ) return;
 
         // Request mic access only when first needed.
         if (!micReady) {
@@ -908,7 +1100,16 @@
 
     // RETRY ONLY IF CONNECTION FAILED
     retryButton.onclick = () => {
-      void connect();
+      if (
+        areaSelect.value &&
+        machineSelect.value &&
+        variantSelect.value
+      ) {
+        queueProductSelection();
+      } else {
+        productError = "";
+        void connect();
+      }
     };
 
     // LOAD PRODUCTS AND CONNECT AUTOMATICALLY
