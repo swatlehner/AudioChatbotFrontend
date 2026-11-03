@@ -181,6 +181,39 @@
       margin-bottom: 0;
     }
 
+    .message.product-greeting {
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .product-greeting-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .product-greeting-content .message-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .product-greeting-image {
+      flex: 0 0 72px;
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      background: white;
+      border-radius: 8px;
+    }
+
+    @media (max-width: 480px) {
+      .product-greeting-image {
+        flex-basis: 60px;
+        width: 60px;
+        height: 60px;
+      }
+    }
+
   </style>
 </head>
 
@@ -523,6 +556,44 @@
       return content;
     }
 
+    function addProductGreeting(text, selection) {
+      const content = addMessage("assistant", text);
+
+      // The initial greeting has no selected product or image.
+      if (!selection) return;
+
+      const bubble = content.parentElement;
+      const image = new Image();
+
+      image.className = "product-greeting-image";
+      image.alt =
+        `${selection.machine}, variant ${selection.variant}`;
+
+      image.decoding = "async";
+
+      image.onload = () => {
+        // The user may have switched products while it was loading.
+        if (!bubble.isConnected) return;
+
+        const layout = document.createElement("div");
+        layout.className = "product-greeting-content";
+
+        content.replaceWith(layout);
+        layout.append(content, image);
+
+        bubble.classList.add("product-greeting");
+      };
+
+      const parameters = new URLSearchParams({
+        area: selection.area,
+        machine: selection.machine,
+        variant: selection.variant,
+      });
+
+      image.src =
+        BACKEND_URL + "/product-image?" + parameters.toString();
+    }
+
     async function callAgent(method, payload = "") {
       const identity = getAgentIdentity();
 
@@ -817,7 +888,7 @@
         }
 
         const { greeting } = JSON.parse(result);
-        addMessage("assistant", greeting);
+        addProductGreeting(greeting, selection);
 
         conversationReady = !!selection;
 
