@@ -149,8 +149,15 @@
       margin: 16px 0;
     }
 
-    .product-selector h3 {
-      margin-top: 0;
+    .product-selector summary {
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      overflow-wrap: anywhere;
+    }
+
+    .product-selector[open] summary {
+      margin-bottom: 12px;
     }
 
     .product-selector label {
@@ -265,8 +272,8 @@
   <p id="status">Connecting...</p>
 
 
-  <div class="product-selector">
-    <h3>Select a product</h3>
+  <details id="productSelector" class="product-selector" open>
+    <summary id="productSelectorSummary">Select a product</summary>
 
     <label for="areaSelect">Area</label>
     <select id="areaSelect" disabled>
@@ -284,7 +291,7 @@
     </select>
 
     <p id="productStatus">No product selected</p>
-  </div>
+  </details>
 
 
   <button id="retryButton" hidden>
@@ -347,6 +354,8 @@
     const machineSelect = $("machineSelect");
     const variantSelect = $("variantSelect");
     const productStatus = $("productStatus");
+    const productSelector = $("productSelector");
+    const productSelectorSummary = $("productSelectorSummary");
     const productDocuments = $("productDocuments");
     const productDocumentsStatus = $("productDocumentsStatus");
     const productDocumentsList = $("productDocumentsList");
@@ -750,6 +759,9 @@
       room = null;
       clearProductDocuments();
 
+      productSelector.open = true;
+      productSelectorSummary.textContent = "Select a product";
+
       conversationReady = false;
       transcriptSegments.clear();
       messages.replaceChildren();
@@ -1022,6 +1034,12 @@
         productStatus.textContent = selection
           ? `Active product: ${selection.area} / ${selection.machine} / ${selection.variant}`
           : "No product selected";
+
+        productSelectorSummary.textContent = selection
+          ? `${selection.machine} / ${selection.variant} — change product`
+          : "Select a product";
+
+        productSelector.open = !selection;
 
         retryButton.hidden = true;
         updateAvailability();
