@@ -208,6 +208,41 @@
       background: white;
       border-radius: 8px;
     }
+
+    #productDocuments {
+      margin-top: 24px;
+      padding: 14px 16px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      background: #f6f7f9;
+    }
+
+    #productDocuments summary {
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    #productDocumentsStatus {
+      margin: 12px 0;
+      color: #666;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    #productDocumentsList {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    #productDocumentsList li {
+      margin: 10px 0;
+    }
+
+    #productDocumentsList a {
+      color: #2768cc;
+      overflow-wrap: anywhere;
+    }
+
   </style>
 </head>
 
@@ -284,6 +319,14 @@
 
   <div id="audio"></div>
 
+  <details id="productDocuments" hidden>
+    <summary>Manuals and documents</summary>
+
+    <p id="productDocumentsStatus" role="status"></p>
+
+    <ul id="productDocumentsList"></ul>
+  </details>
+
   <script>
     // Keep your existing real Railway domain here.
     const BACKEND_URL =
@@ -304,6 +347,11 @@
     const machineSelect = $("machineSelect");
     const variantSelect = $("variantSelect");
     const productStatus = $("productStatus");
+    const productDocuments = $("productDocuments");
+    const productDocumentsStatus = $("productDocumentsStatus");
+    const productDocumentsList = $("productDocumentsList");
+
+    let documentRequest = 0;
 
     let room = null;
     let pointerId = null;
@@ -362,10 +410,88 @@
       }
     }
 
+    function clearProductDocuments() {
+      // Invalidate any earlier request still loading.
+      documentRequest++;
 
+      productDocuments.hidden = true;
+      productDocuments.open = false;
+      productDocumentsStatus.textContent = "";
+      productDocumentsList.replaceChildren();
+    }
+
+    async function loadProductDocuments(selection) {
+      clearProductDocuments();
+
+      if (!selection) return;
+
+      const request = documentRequest;
+
+      productDocuments.hidden = false;
+      productDocumentsStatus.textContent = "Loading documents...";
+
+      try {
+        const parameters = new URLSearchParams({
+          area: selection.area,
+          machine: selection.machine,
+          variant: selection.variant,
+        });
+
+        const response = await fetch(
+          BACKEND_URL + "/product-documents?" +
+          parameters.toString()
+        );
+
+        if (!response.ok) {
+          throw new Error("Could not load document list");
+        }
+
+        const files = await response.json();
+
+        // Ignore results belonging to a previous product.
+        if (request !== documentRequest) return;
+
+        for (const file of files) {
+          const fileParameters = new URLSearchParams({
+            area: selection.area,
+            machine: selection.machine,
+            variant: selection.variant,
+            filename: file.name,
+          });
+
+          const link = document.createElement("a");
+
+          link.textContent = `${file.name} (${file.type})`;
+          link.href =
+            BACKEND_URL + "/product-document?" +
+            fileParameters.toString();
+
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+
+          const item = document.createElement("li");
+          item.appendChild(link);
+          productDocumentsList.appendChild(item);
+        }
+
+        productDocumentsStatus.textContent = files.length
+          ? `${selection.machine} / ${selection.variant} — opens in a new tab.`
+          : "No PDF or TXT documents available for this product.";
+
+      } catch (error) {
+        if (request !== documentRequest) return;
+
+        console.error("Document list failed:", error);
+
+        productDocumentsList.replaceChildren();
+        productDocumentsStatus.textContent =
+          "Documents could not be loaded. Please select the product again.";
+      }
+    }
     // Every complete selection starts a separate room and conversation.
     function queueProductSelection() {
       const revision = ++selectionRevision;
+      clearProductDocuments();
 
       const area = areaSelect.value;
       const machine = machineSelect.value;
@@ -622,6 +748,8 @@
 
     function resetControls() {
       room = null;
+      clearProductDocuments();
+
       conversationReady = false;
       transcriptSegments.clear();
       messages.replaceChildren();
@@ -897,6 +1025,7 @@
 
         retryButton.hidden = true;
         updateAvailability();
+        void loadProductDocuments(selection);
 
       } catch (error) {
         console.error(error);
