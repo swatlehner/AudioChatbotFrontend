@@ -349,6 +349,10 @@
     const textInput = $("textInput");
     const sendButton = $("sendButton");
     const messages = $("messages");
+    const conversationFeedback = $("conversationFeedback");
+    const thumbsUp = $("thumbsUp");
+    const thumbsDown = $("thumbsDown");
+    const feedbackStatus = $("feedbackStatus");
     const audioContainer = $("audio");
     const areaSelect = $("areaSelect");
     const machineSelect = $("machineSelect");
@@ -377,6 +381,137 @@
     let selectionRevision = 0;
 
     const transcriptSegments = new Map();
+    let feedbackReady = false;
+    let feedbackValue = null;
+    let feedbackBusy = false;
+    let feedbackWatchRoom = null;
+
+    function resetFeedback() {
+      feedbackReady = false;
+      feedbackValue = null;
+      feedbackBusy = false;
+      feedbackWatchRoom = null;
+
+      feedbackStatus.textContent = "";
+      conversationFeedback.hidden = true;
+      thumbsUp.disabled = true;
+      thumbsDown.disabled = true;
+      thumbsUp.setAttribute("aria-pressed", "false");
+      thumbsDown.setAttribute("aria-pressed", "false");
+    }
+
+    async function waitForSavedQuestion() {
+      if (feedbackReady || !conversationReady || !room) return;
+
+      const activeRoom = room;
+      const revision = selectionRevision;
+
+      if (feedbackWatchRoom === activeRoom) return;
+      feedbackWatchRoom = activeRoom;
+
+      const isCurrent = () =>
+        room === activeRoom &&
+        revision === selectionRevision &&
+        conversationReady;
+
+      try {
+        for (
+          let attempt = 0;
+          attempt < 10 && isCurrent();
+          attempt++
+        ) {
+          try {
+            const result = JSON.parse(
+              await callAgent("feedback_state")
+            );
+
+            if (!isCurrent()) return;
+
+            if (result.has_questions) {
+              feedbackReady = true;
+              feedbackValue = result.feedback;
+              feedbackStatus.textContent = "";
+              updateAvailability();
+              return;
+            }
+          } catch (error) {
+            if (!isCurrent()) return;
+          }
+
+          await new Promise(
+            resolve => setTimeout(resolve, 1000)
+          );
+        }
+
+        if (isCurrent()) {
+          feedbackStatus.textContent =
+            "Feedback is temporarily unavailable. " +
+            "Send another message to retry.";
+        }
+      } finally {
+        if (feedbackWatchRoom === activeRoom) {
+          feedbackWatchRoom = null;
+        }
+      }
+    }
+
+    async function submitFeedback(rating) {
+      if (
+        !feedbackReady ||
+        feedbackBusy ||
+        !conversationReady
+      ) return;
+
+      const activeRoom = room;
+      const revision = selectionRevision;
+
+      const isCurrent = () =>
+        room === activeRoom &&
+        revision === selectionRevision &&
+        conversationReady;
+
+      feedbackBusy = true;
+      feedbackStatus.textContent = "Saving feedback...";
+      updateAvailability();
+
+      try {
+        const result = JSON.parse(
+          await callAgent(
+            "set_feedback",
+            JSON.stringify({ feedback: rating })
+          )
+        );
+
+        if (!isCurrent()) return;
+
+        feedbackValue = result.feedback;
+        feedbackStatus.textContent =
+          "Feedback saved for this conversation.";
+
+      } catch (error) {
+        if (isCurrent()) {
+          feedbackStatus.textContent =
+            "Feedback could not be confirmed. " +
+            "Please click again to retry.";
+        }
+
+      } finally {
+        if (isCurrent()) {
+          feedbackBusy = false;
+          updateAvailability();
+        }
+      }
+    }
+
+    thumbsUp.addEventListener(
+      "click",
+      () => submitFeedback(1)
+    );
+
+    thumbsDown.addEventListener(
+      "click",
+      () => submitFeedback(-1)
+    );
 
 
     // Fill a dropdown with folder names.
@@ -499,6 +634,7 @@
     }
     // Every complete selection starts a separate room and conversation.
     function queueProductSelection() {
+      resetFeedback();
       const revision = ++selectionRevision;
       clearProductDocuments();
 
@@ -641,6 +777,24 @@
       talkButton.disabled = !canChat;
       voiceToggle.disabled = !canChat;
 
+      conversationFeedback.hidden = !conversationReady;
+
+      const canRate =
+        canChat && feedbackReady && !feedbackBusy;
+
+      thumbsUp.disabled = !canRate;
+      thumbsDown.disabled = !canRate;
+
+      thumbsUp.setAttribute(
+        "aria-pressed",
+        String(feedbackValue === 1)
+      );
+
+      thumbsDown.setAttribute(
+        "aria-pressed",
+        String(feedbackValue === -1)
+      );
+
       areaSelect.disabled = !manualTree;
 
       machineSelect.disabled =
@@ -756,6 +910,7 @@
     }
 
     function resetControls() {
+      resetFeedback();
       room = null;
       clearProductDocuments();
 
@@ -817,6 +972,7 @@
       });
 
       room = newRoom;
+      resetFeedback();
       conversationReady = false;
       transcriptSegments.clear();
       messages.replaceChildren();
@@ -858,6 +1014,10 @@
 
               if (!content) {
                 content = addMessage(role, accumulated);
+                if (role === "user") {
+                  void waitForSavedQuestion();
+                }
+
                 transcriptSegments.set(key, content);
               } else {
                 content.textContent = accumulated;
@@ -1101,6 +1261,8 @@
         ) return;
 
         addMessage("user", text);
+        void waitForSavedQuestion();
+
         textInput.value = "";
         status.textContent = "Processing...";
 
