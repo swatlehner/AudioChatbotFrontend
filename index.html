@@ -250,6 +250,30 @@
       overflow-wrap: anywhere;
     }
 
+    #conversationFeedback {
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    #conversationFeedback button {
+      margin-left: 6px;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      background: white;
+    }
+
+    #conversationFeedback button[aria-pressed="true"] {
+      background: #d6e7ff;
+      border-color: #2768cc;
+    }
+
+    #feedbackStatus {
+      margin: 6px 0 0;
+      color: #666;
+      font-size: 13px;
+    }
+
   </style>
 </head>
 
@@ -302,6 +326,27 @@
        role="log"
        aria-label="Conversation"
        aria-live="polite"></div>
+
+  <div id="conversationFeedback"
+       role="group"
+       aria-label="Rate this conversation"
+       hidden>
+    <span>Was this conversation helpful?</span>
+
+    <button id="thumbsUp"
+            type="button"
+            aria-label="Helpful conversation"
+            aria-pressed="false"
+            disabled>👍</button>
+
+    <button id="thumbsDown"
+            type="button"
+            aria-label="Unhelpful conversation"
+            aria-pressed="false"
+            disabled>👎</button>
+
+    <p id="feedbackStatus" role="status"></p>
+  </div>
 
   <form id="composer">
     <textarea
