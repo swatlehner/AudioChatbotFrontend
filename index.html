@@ -287,7 +287,6 @@
       <input
         id="voiceToggle"
         type="checkbox"
-        disabled
       >
       Spoken replies
     </label>
@@ -515,6 +514,7 @@
         revision === selectionRevision &&
         conversationReady;
 
+      const nextRating = feedbackValue === rating ? null : rating;
       feedbackBusy = true;
       feedbackStatus.textContent = "Saving feedback...";
       updateAvailability();
@@ -523,15 +523,16 @@
         const result = JSON.parse(
           await callAgent(
             "set_feedback",
-            JSON.stringify({ feedback: rating })
-          )
+            JSON.stringify({ feedback: nextRating })
+                    )
         );
 
         if (!isCurrent()) return;
 
         feedbackValue = result.feedback;
-        feedbackStatus.textContent =
-          "Feedback saved for this conversation.";
+        feedbackStatus.textContent = result.feedback === null
+          ? "Feedback cleared for this conversation."
+          : "Feedback saved for this conversation.";
 
       } catch (error) {
         if (isCurrent()) {
@@ -820,7 +821,6 @@
       textInput.disabled = !canChat;
       sendButton.disabled = !canChat;
       talkButton.disabled = !canChat;
-      voiceToggle.disabled = !canChat;
 
       conversationFeedback.hidden = !conversationReady;
 
@@ -995,7 +995,6 @@
       talkButton.disabled = true;
 
       voiceToggle.checked = false;
-      voiceToggle.disabled = true;
 
       textInput.disabled = true;
       sendButton.disabled = true;
@@ -1214,10 +1213,20 @@
           return;
         }
 
-        // Preserve the user's audio preference across products.
-        await callAgent(
-          "set_voice_replies",
-          voiceToggle.checked ? "true" : "false"
+        // Apply the latest preference, including clicks while connecting.
+        let appliedVoicePreference;
+
+        do {
+          appliedVoicePreference = voiceToggle.checked;
+
+          await callAgent(
+            "set_voice_replies",
+            appliedVoicePreference ? "true" : "false"
+          );
+        } while (
+          room === newRoom &&
+          revision === selectionRevision &&
+          voiceToggle.checked !== appliedVoicePreference
         );
 
         if (revision !== selectionRevision) {
@@ -1334,29 +1343,31 @@
     });
 
     // VOICE OUTPUT TOGGLE
+    let voiceChange = 0;
+
     voiceToggle.addEventListener("change", async () => {
+      const change = ++voiceChange;
       const voiceRoom = room;
       const revision = selectionRevision;
       const enabled = voiceToggle.checked;
 
-      if (!voiceRoom || !conversationReady) return;
-
       const stillCurrent = () =>
         room === voiceRoom &&
-        revision === selectionRevision;
-
-      voiceToggle.disabled = true;
+        revision === selectionRevision &&
+        change === voiceChange;
 
       audioContainer.querySelectorAll("audio").forEach(el => {
-        el.muted = !enabled;
+        el.muted = !enabled || !conversationReady;
       });
+
+      if (!voiceRoom) return;
 
       try {
         if (enabled) {
           await voiceRoom.startAudio();
         }
 
-        if (!stillCurrent()) return;
+        if (!stillCurrent() || !conversationReady) return;
 
         await callAgent(
           "set_voice_replies",
@@ -1371,7 +1382,7 @@
         voiceToggle.checked = !enabled;
 
         audioContainer.querySelectorAll("audio").forEach(el => {
-          el.muted = enabled;
+          el.muted = enabled || !conversationReady;
         });
 
         status.textContent = "Could not change voice setting";
