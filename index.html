@@ -888,8 +888,7 @@
       const content = addMessage("assistant", text);
 
       // The initial greeting has no selected product or image.
-      if (!selection) return;
-
+      if (!selection) return content;
       const bubble = content.parentElement;
       const image = new Image();
 
@@ -920,6 +919,8 @@
 
       image.src =
         BACKEND_URL + "/product-image?" + parameters.toString();
+
+      return content;
     }
 
     async function callAgent(method, payload = "") {
@@ -1027,8 +1028,7 @@
         async (reader, participantInfo) => {
           const acceptsStream = () =>
             room === newRoom &&
-            revision === selectionRevision &&
-            conversationReady;
+            revision === selectionRevision;
 
           const accepted = acceptsStream();
           const attrs = reader.info.attributes || {};
@@ -1057,7 +1057,10 @@
               ) continue;
 
               if (!content) {
-                content = addMessage(role, accumulated);
+                content =
+                  role === "assistant" && !messages.querySelector(".assistant")
+                    ? addProductGreeting(accumulated, selection)
+                    : addMessage(role, accumulated);
                 if (role === "user") {
                   void waitForSavedQuestion();
                 }
@@ -1098,7 +1101,7 @@
 
             const element = track.attach();
             element.muted =
-              !voiceToggle.checked || !conversationReady;
+              !voiceToggle.checked;
 
             audioContainer.appendChild(element);
           }
@@ -1235,14 +1238,11 @@
           return;
         }
 
-        const { greeting } = JSON.parse(result);
-        addProductGreeting(greeting, selection);
-
         conversationReady = !!selection;
 
         audioContainer.querySelectorAll("audio").forEach(el => {
           el.muted =
-            !voiceToggle.checked || !conversationReady;
+            !voiceToggle.checked ;
         });
 
         productStatus.textContent = selection
@@ -1357,7 +1357,7 @@
         change === voiceChange;
 
       audioContainer.querySelectorAll("audio").forEach(el => {
-        el.muted = !enabled || !conversationReady;
+        el.muted = !enabled ;
       });
 
       if (!voiceRoom) return;
@@ -1382,7 +1382,7 @@
         voiceToggle.checked = !enabled;
 
         audioContainer.querySelectorAll("audio").forEach(el => {
-          el.muted = enabled || !conversationReady;
+          el.muted = enabled ;
         });
 
         status.textContent = "Could not change voice setting";
