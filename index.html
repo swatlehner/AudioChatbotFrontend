@@ -273,12 +273,81 @@
       color: #666;
       font-size: 13px;
     }
+    .chat-notice {
+      margin: 16px 0;
+      padding: 12px 14px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      background: #f6f7f9;
+      font-size: 14px;
+      line-height: 1.5;
+    }
 
+    .chat-notice p {
+      margin: 6px 0;
+    }
+
+    .chat-notice summary {
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .chat-notice a, .legal-links a {
+      color: #2768cc;
+    }
+
+    .legal-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 24px;
+      font-size: 13px;
+    }
   </style>
 </head>
 
 <body>
   <h1>Lehner Maschinenbau Betriebsanleitungs Assistent</h1>
+
+  <section class="chat-notice"
+           lang="de"
+           aria-label="Hinweise zum KI-Assistenten">
+    <p>
+      <strong>KI-Assistent von LEHNER</strong><br>
+      Sie kommunizieren mit einer künstlichen Intelligenz.
+      Antworten können fehlerhaft sein. Beachten Sie die
+      Original-Betriebsanleitung und deren Sicherheitshinweise.
+    </p>
+
+    <p>
+      Gespräche und Bewertungen werden zur Auswertung und
+      Dokumentation gespeichert.
+      <a href="https://www.lehner.eu/datenschutzerklaerung/"
+         target="_blank"
+         rel="noopener noreferrer">Datenschutzhinweise</a>
+    </p>
+
+    <details>
+      <summary>Weitere Hinweise zur Datenverarbeitung</summary>
+
+      <p>
+        Bei Spracheingabe wird Ihr Mikrofon-Audio zur Erkennung
+        Ihrer Frage verarbeitet. In der Chat-Datenbank speichern
+        wir Fragen, Antworten, Produktwahl, Zeitstempel,
+        Sitzungskennungen und Bewertungen.
+      </p>
+
+      <p id="retentionNotice">
+        Die Aufbewahrungsfrist wird geladen.
+      </p>
+
+      <p>
+        Bitte geben Sie keine vertraulichen oder unnötigen
+        personenbezogenen Daten ein. Bei Unklarheiten
+        <a href="mailto:info@lehner.eu">kontaktieren Sie LEHNER</a>.
+      </p>
+    </details>
+  </section>
 
   <div class="controls">
     <span>Lehner Maschinenbau Betriebsanleitungs Assistent</span>
@@ -377,6 +446,22 @@
 
     <ul id="productDocumentsList"></ul>
   </details>
+
+  <footer class="legal-links"
+          lang="de"
+          aria-label="Rechtliche Informationen">
+    <a href="https://www.lehner.eu/impressum/"
+       target="_blank"
+       rel="noopener noreferrer">Impressum</a>
+
+    <a href="https://www.lehner.eu/datenschutzerklaerung/"
+       target="_blank"
+       rel="noopener noreferrer">Datenschutz</a>
+
+    <a href="https://www.lehner.eu/agb/"
+       target="_blank"
+       rel="noopener noreferrer">AGB</a>
+  </footer>
 
   <script>
     // Keep your existing real Railway domain here.
@@ -559,6 +644,37 @@
       () => submitFeedback(-1)
     );
 
+
+    async function loadRetentionNotice() {
+      const notice = $("retentionNotice");
+
+      try {
+        const response = await fetch(BACKEND_URL + "/");
+        if (!response.ok) {
+          throw new Error("Configuration unavailable");
+        }
+
+        const data = await response.json();
+        const days = data.chat_retention_days;
+
+        if (!Number.isInteger(days) || days < 1) {
+          throw new Error("Invalid retention period");
+        }
+
+        notice.textContent =
+          "Die automatische Löschung in unserer Chat-Datenbank erfolgt " +
+          "beim nächsten täglichen Löschlauf nach Ablauf von " + days +
+          " Tagen seit der letzten Frage der jeweiligen Sitzung. " +
+          "Für Sicherungskopien und Daten bei Dienstleistern können " +
+          "andere Aufbewahrungsfristen gelten.";
+
+      } catch (error) {
+        console.error("Retention information unavailable:", error);
+        notice.textContent =
+          "Die aktuelle Aufbewahrungsfrist konnte nicht geladen werden. " +
+          "Bitte beachten Sie die Datenschutzhinweise.";
+      }
+    }
 
     // Fill a dropdown with folder names.
     function populateSelect(select, values, placeholder) {
@@ -1543,6 +1659,7 @@
     };
 
     // LOAD PRODUCTS AND CONNECT AUTOMATICALLY
+    void loadRetentionNotice();
     void loadManuals();
     void connect();
   </script>
