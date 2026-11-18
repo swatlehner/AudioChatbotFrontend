@@ -85,6 +85,17 @@
       white-space: pre-wrap;
     }
 
+    .message-sources {
+      margin-top: 8px;
+      font-size: 0.85em;
+    }
+
+    .message-sources a {
+      display: block;
+      margin-top: 4px;
+    }
+
+
     #composer {
       display: flex;
       align-items: stretch;
@@ -1010,6 +1021,72 @@
       return content;
     }
 
+    function renderAssistantMessage(content, text, pdfDocuments, selection) {
+      const marker = "[[SOURCES:";
+      const start = /\[\[SOURCES:/i.exec(text);
+      let answer = start ? text.slice(0, start.index) : text;
+
+      if (!start) {
+        // Hide a partial footer marker while the response is streaming.
+        for (let size = Math.min(marker.length - 1, answer.length); size > 0; size--) {
+          if (marker.startsWith(answer.slice(-size).toUpperCase())) {
+            answer = answer.slice(0, -size);
+            break;
+          }
+        }
+      }
+
+      content.textContent = answer.trimEnd();
+      if (!start || !selection) return;
+
+      const footer = /^\[\[SOURCES:([^\]]*)\]\]/i.exec(text.slice(start.index));
+      if (!footer) return;
+
+      const bubble = content.closest(".message");
+      let links = bubble.querySelector(".message-sources");
+      if (links) links.replaceChildren();
+
+      const ids = new Set(
+        footer[1].split(",").map(id => id.trim().toUpperCase())
+      );
+
+      for (const id of ids) {
+        const parts = /^(D\d+)P(\d+)$/.exec(id);
+        if (!parts) continue;
+
+        const source = pdfDocuments[parts[1]];
+        const page = Number(parts[2]);
+        if (
+          !source ||
+          typeof source.filename !== "string" ||
+          !Number.isInteger(page) ||
+          page < 1 ||
+          page > source.pages
+        ) continue;
+
+        if (!links) {
+          links = document.createElement("div");
+          links.className = "message-sources";
+          bubble.appendChild(links);
+        }
+
+        const parameters = new URLSearchParams({
+          area: selection.area,
+          machine: selection.machine,
+          variant: selection.variant,
+          filename: source.filename,
+        });
+        const link = document.createElement("a");
+        link.textContent = source.filename + " — PDF page " + page;
+        link.href = BACKEND_URL + "/product-document?" +
+          parameters.toString() + "#page=" + page;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        links.appendChild(link);
+      }
+    }
+
+
     function addProductGreeting(text, selection) {
       const content = addMessage("assistant", text);
 
@@ -1130,6 +1207,7 @@
 
       conversationReady = false;
       transcriptSegments.clear();
+      let pdfDocuments = {};
 
       // Receive text only from the current conversation.
       newRoom.registerTextStreamHandler(
@@ -1175,6 +1253,10 @@
                 }
 
                 transcriptSegments.set(key, content);
+              }
+
+              if (role === "assistant") {
+                renderAssistantMessage(content, accumulated, pdfDocuments, selection);
               } else {
                 content.textContent = accumulated;
               }
@@ -1332,6 +1414,7 @@
           return;
         }
         const initialized = JSON.parse(result);
+        pdfDocuments = initialized.pdf_documents || {};        
         activeSelection = selection;
         resumeToken = initialized.resume_token || null;
         feedbackReady = initialized.has_questions === true;
