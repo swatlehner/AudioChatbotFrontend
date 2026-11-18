@@ -508,6 +508,10 @@
     let productQueue = Promise.resolve();
     let conversationReady = false;
     let selectionRevision = 0;
+    let activeSelection = null;
+    let resumeToken = null;
+    let connectionNotice = "";
+    let reconnecting = false;
 
     const transcriptSegments = new Map();
     let feedbackReady = false;
@@ -808,6 +812,10 @@
         ? { area, machine, variant }
         : null;
 
+      activeSelection = selection;
+      resumeToken = null;
+      connectionNotice = "";
+
       conversationReady = false;
       transcriptSegments.clear();
       messages.replaceChildren();
@@ -938,7 +946,7 @@
       sendButton.disabled = !canChat;
       talkButton.disabled = !canChat;
 
-      conversationFeedback.hidden = !conversationReady;
+      conversationFeedback.hidden = !conversationReady && !resumeToken;
 
       const canRate =
         canChat && feedbackReady && !feedbackBusy;
@@ -970,6 +978,8 @@
         status.textContent = "Updating product...";
       } else if (productError) {
         status.textContent = "Product selection failed";
+      } else if (connectionNotice) {
+        status.textContent = connectionNotice;
       } else if (room && !agentReady) {
         status.textContent = "Waiting for agent...";
       } else if (canChat) {
@@ -1072,60 +1082,40 @@
     }
 
     function resetControls() {
-      resetFeedback();
       room = null;
-      clearProductDocuments();
-
-      productSelector.open = true;
-      productSelectorSummary.textContent = "Select a product";
-
       conversationReady = false;
       transcriptSegments.clear();
-      messages.replaceChildren();
-      textInput.value = "";
-      areaSelect.value = "";
-
-      populateSelect(
-        machineSelect,
-        [],
-        "Choose machine..."
-      );
-
-      populateSelect(
-        variantSelect,
-        [],
-        "Choose variant..."
-      );
-
-      areaSelect.disabled = true;
-      machineSelect.disabled = true;
-      variantSelect.disabled = true;
-
-      productStatus.textContent = "No product selected";
 
       pointerId = null;
       spaceHeld = false;
       recording = false;
       micReady = false;
+      feedbackBusy = false;
+      feedbackWatchRoom = null;
 
       talkButton.classList.remove("active");
-      talkButton.disabled = true;
+      audioContainer.replaceChildren();
 
-      voiceToggle.checked = false;
-
-      textInput.disabled = true;
-      sendButton.disabled = true;
-
-      audioContainer.innerHTML = "";
-      status.textContent = "Disconnected";
+      connectionNotice ||= "Connection closed. Reconnect to continue.";
+      updateAvailability();
     }
 
-    // CONNECT AUTOMATICALLY
     async function connect(
       selection = null,
-      revision = selectionRevision
+      revision = selectionRevision,
+      resume = false
     ) {
+      const recovering = !!(resume && resumeToken && selection);
+      const request = selection ? { ...selection } : { clear: true };
+
+      if (recovering) {
+        request.resume_token = resumeToken;
+        request.require_history = !!messages.querySelector(".user");
+      }
+
       retryButton.hidden = true;
+      connectionNotice = "";
+      productError = "";
       status.textContent = "Connecting...";
 
       const newRoom = new LivekitClient.Room({
@@ -1133,10 +1123,13 @@
       });
 
       room = newRoom;
-      resetFeedback();
+      if (!recovering) {
+        resetFeedback();
+        messages.replaceChildren();
+      }
+
       conversationReady = false;
       transcriptSegments.clear();
-      messages.replaceChildren();
 
       // Receive text only from the current conversation.
       newRoom.registerTextStreamHandler(
@@ -1240,14 +1233,24 @@
 
       newRoom.on(
         LivekitClient.RoomEvent.ParticipantDisconnected,
-        () => {
-          if (room === newRoom) updateAvailability();
+        participant => {
+          if (
+            room !== newRoom ||
+            revision !== selectionRevision
+          ) return;
+
+          if (participant.isAgent) {
+            void newRoom.disconnect().catch(console.error);
+          } else {
+            updateAvailability();
+          }
         }
       );
 
       newRoom.on(
         LivekitClient.RoomEvent.Disconnected,
-        () => {
+        reason => {
+          console.info("LiveKit disconnected:", reason);
           if (
             room !== newRoom ||
             revision !== selectionRevision
@@ -1255,7 +1258,6 @@
 
           resetControls();
           retryButton.hidden = false;
-          status.textContent = "Connection closed";
         }
       );
 
@@ -1300,9 +1302,7 @@
               result = await newRoom.localParticipant.performRpc({
                 destinationIdentity: identity,
                 method: "set_product",
-                payload: JSON.stringify(
-                  selection || { clear: true }
-                ),
+                payload: JSON.stringify(request),
                 responseTimeout: 60000,
               });
               break;
@@ -1331,6 +1331,13 @@
           await newRoom.disconnect();
           return;
         }
+        const initialized = JSON.parse(result);
+        activeSelection = selection;
+        resumeToken = initialized.resume_token || null;
+        feedbackReady = initialized.has_questions === true;
+        feedbackValue = initialized.feedback ?? null;
+        feedbackBusy = false;
+        feedbackWatchRoom = null;
 
         // Apply the latest preference, including clicks while connecting.
         let appliedVoicePreference;
@@ -1644,17 +1651,33 @@
       }
     });
 
-    // RETRY ONLY IF CONNECTION FAILED
-    retryButton.onclick = () => {
-      if (
-        areaSelect.value &&
-        machineSelect.value &&
-        variantSelect.value
-      ) {
-        queueProductSelection();
-      } else {
-        productError = "";
-        void connect();
+    // Reconnect resumes the selected conversation while this page stays open.
+    retryButton.onclick = async () => {
+      if (reconnecting || productPending > 0) return;
+
+      reconnecting = true;
+      retryButton.disabled = true;
+      productError = "";
+
+      try {
+        const revision = selectionRevision;
+        await turnQueue;
+        if (revision !== selectionRevision || productPending > 0) return;
+
+        if (activeSelection && resumeToken) {
+          await connect(activeSelection, selectionRevision, true);
+        } else if (
+          areaSelect.value &&
+          machineSelect.value &&
+          variantSelect.value
+        ) {
+          queueProductSelection();
+        } else {
+          await connect();
+        }
+      } finally {
+        reconnecting = false;
+        retryButton.disabled = false;
       }
     };
 
