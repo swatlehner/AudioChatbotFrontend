@@ -261,28 +261,175 @@
       overflow-wrap: anywhere;
     }
 
+    .chat-control-icon {
+      display: block;
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .voice-setting {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    #voiceToggle {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .voice-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .voice-label .chat-control-icon {
+      width: 22px;
+      height: 22px;
+      color: #637084;
+    }
+
+    .voice-label .voice-on {
+      display: none;
+    }
+
+    #voiceToggle:checked ~ .voice-label .voice-off {
+      display: none;
+    }
+
+    #voiceToggle:checked ~ .voice-label .voice-on {
+      display: block;
+      color: #2768cc;
+    }
+
+    .voice-state {
+      min-width: 22px;
+      font-size: 13px;
+      color: #657184;
+    }
+
+    .voice-state::before {
+      content: "Off";
+    }
+
+    #voiceToggle:checked ~ .voice-state::before {
+      content: "On";
+    }
+
+    .voice-track {
+      position: relative;
+      display: block;
+      flex-shrink: 0;
+      width: 48px;
+      height: 28px;
+      border-radius: 999px;
+      background: #c4ccd7;
+      transition: background 120ms;
+    }
+
+    .voice-track::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px #0002;
+      transition: transform 120ms;
+    }
+
+    #voiceToggle:checked ~ .voice-track {
+      background: #2768cc;
+    }
+
+    #voiceToggle:checked ~ .voice-track::after {
+      transform: translateX(20px);
+    }
+
+    #voiceToggle:focus-visible ~ .voice-track,
+    #conversationFeedback button:focus-visible,
+    #retryButton:focus-visible {
+      outline: 2px solid #2768cc;
+      outline-offset: 3px;
+    }
+
     #conversationFeedback {
       margin-top: 12px;
       font-size: 14px;
     }
 
-    #conversationFeedback button {
-      margin-left: 6px;
-      padding: 6px 10px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      background: white;
+    .feedback-buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
     }
 
-    #conversationFeedback button[aria-pressed="true"] {
-      background: #d6e7ff;
+    #conversationFeedback button,
+    #retryButton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      box-sizing: border-box;
+      min-height: 44px;
+      padding: 10px 15px;
+      border: 1px solid #cbd4e0;
+      border-radius: 10px;
+      background: white;
+      color: #222b38;
+      font-size: 14px;
+    }
+
+    #conversationFeedback button {
+      width: 44px;
+      padding: 10px;
+    }
+
+    #conversationFeedback button:not(:disabled):hover,
+    #retryButton:not(:disabled):hover {
+      background: #f1f5fb;
+      border-color: #a6b7cc;
+    }
+
+    #conversationFeedback button[aria-pressed="true"],
+    #conversationFeedback button[aria-pressed="true"]:hover {
+      background: #2768cc;
       border-color: #2768cc;
+      color: white;
     }
 
     #feedbackStatus {
-      margin: 6px 0 0;
+      min-height: 20px;
+      margin: 8px 0 0;
       color: #666;
       font-size: 13px;
+    }
+
+    #retryButton {
+      margin-bottom: 12px;
+    }
+
+    #retryButton[hidden] {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .voice-track,
+      .voice-track::after {
+        transition: none;
+      }
     }
     .chat-notice {
       margin: 16px 0;
@@ -363,12 +510,37 @@
   <div class="controls">
     <span>Lehner Maschinenbau Betriebsanleitungs Assistent</span>
 
-    <label>
-      <input
-        id="voiceToggle"
-        type="checkbox"
-      >
-      Spoken replies
+    <label class="voice-setting">
+      <input id="voiceToggle"
+             type="checkbox"
+             role="switch"
+             aria-label="Spoken replies">
+
+      <span class="voice-label">
+        <svg class="chat-control-icon voice-off"
+             viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true" focusable="false">
+          <polygon points="11 5 6 9 3 9 3 15 6 15 11 19 11 5"/>
+          <path d="m16 9 5 6m0-6-5 6"/>
+        </svg>
+
+        <svg class="chat-control-icon voice-on"
+             viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true" focusable="false">
+          <polygon points="11 5 6 9 3 9 3 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+
+        <span>Spoken replies</span>
+      </span>
+
+      <span class="voice-state" aria-hidden="true"></span>
+      <span class="voice-track" aria-hidden="true"></span>
     </label>
   </div>
 
@@ -397,8 +569,16 @@
   </details>
 
 
-  <button id="retryButton" hidden>
-    Retry connection
+  <button id="retryButton" type="button" hidden>
+    <svg class="chat-control-icon"
+         viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"
+         aria-hidden="true" focusable="false">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/>
+      <path d="M21 3v5h-5"/>
+    </svg>
+    Reconnect
   </button>
 
   <div id="messages"
@@ -412,17 +592,37 @@
        hidden>
     <span>Was this conversation helpful?</span>
 
-    <button id="thumbsUp"
-            type="button"
-            aria-label="Helpful conversation"
-            aria-pressed="false"
-            disabled>👍</button>
+    <div class="feedback-buttons">
+      <button id="thumbsUp"
+              type="button"
+              aria-label="Helpful conversation"
+              aria-pressed="false"
+              disabled>
+        <svg class="chat-control-icon"
+             viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true" focusable="false">
+          <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.72l1.38-9A2 2 0 0 0 19.68 9z"/>
+          <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+        </svg>
+      </button>
 
-    <button id="thumbsDown"
-            type="button"
-            aria-label="Unhelpful conversation"
-            aria-pressed="false"
-            disabled>👎</button>
+      <button id="thumbsDown"
+              type="button"
+              aria-label="Unhelpful conversation"
+              aria-pressed="false"
+              disabled>
+        <svg class="chat-control-icon"
+             viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true" focusable="false">
+          <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.72l-1.38 9A2 2 0 0 0 4.32 15z"/>
+          <path d="M17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/>
+        </svg>
+      </button>
+    </div>
 
     <p id="feedbackStatus" role="status"></p>
   </div>
